@@ -205,11 +205,27 @@ export const detectors: DetectorInfo[] = [
     caveat: 'Random split, so slightly optimistic compared with testing on a later month.',
     experimental: true,
   },
+  {
+    key: 'cyber_incident',
+    item: '1.05',
+    title: 'Material cybersecurity incident',
+    icon: '🔒',
+    tone: 'red',
+    what: 'Reads a disclosed cybersecurity incident and judges whether the company has determined it is material, determined it is not material, or is still assessing.',
+    model: 'One RoBERTa-large reader on the whole Item 1.05 text. No ensemble: only 55 filings exist in the full history of this disclosure (mandatory since Dec 2023), too few to spare any for extra seeds.',
+    tested: '5-fold cross-validation over all 55 filings (every one held out exactly once), not a single train/test split — too few examples for a holdout to mean anything on its own.',
+    metrics: [
+      { label: 'Material: right / found (F1)', value: '57% / 62% (0.59)' },
+      { label: 'Not material: right / found (F1)', value: '48% / 61% (0.54)' },
+      { label: 'Still assessing: right / found (F1)', value: '33% / 9% (0.14)' },
+    ],
+    caveat: '"Still assessing" is close to a coin flip — only 11 examples exist. Trust "material" / "not material" calls far more than that third category.',
+    experimental: true,
+  },
 ]
 
 export const comingSoon: { title: string; item: string; status: string }[] = [
   { title: 'CFO model as one frozen, scored model', item: '5.02', status: 'A single model trained on all four hand-checked months is still training' },
   { title: 'Restatements (non-reliance)', item: '4.02', status: 'Planned, not started' },
-  { title: 'Cybersecurity incidents', item: '1.05', status: 'Planned, not started' },
   { title: 'Other events', item: '8.01', status: 'Planned, not started' },
 ]

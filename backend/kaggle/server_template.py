@@ -50,6 +50,12 @@ agree_hit = glob.glob("/kaggle/input/**/agree_doc_s42/adapter_config.json", recu
 if agree_hit:
     os.environ["AGREE_DIR"] = os.path.dirname(os.path.dirname(agree_hit[0]))
 print("agreements filing reader:", os.environ.get("AGREE_DIR", "not found (sentence readers only)"), flush=True)
+# optional: the Item 1.05 (cybersecurity incident) materiality classifier. Kaggle mounts the small
+# `filinglens-item105` dataset with the adapter files at its root, same shape as filinglens-dates.
+item105_hit = glob.glob("/kaggle/input/**/filinglens-item105/adapter_config.json", recursive=True)
+if item105_hit:
+    os.environ["ITEM105_DIR"] = os.path.dirname(item105_hit[0])
+print("item105 materiality reader:", os.environ.get("ITEM105_DIR", "not found (detector will error if present)"), flush=True)
 os.environ["USE_GPU"] = "1"
 os.environ["TORCH_THREADS"] = str(os.cpu_count() or 4)
 os.environ["HF_HUB_DISABLE_XET"] = "1"
