@@ -45,6 +45,11 @@ dates_hit = glob.glob("/kaggle/input/**/filinglens-dates/adapter_config.json", r
 if dates_hit:
     os.environ["DATES_DIR"] = os.path.dirname(dates_hit[0])
 print("date tagger:", os.environ.get("DATES_DIR", "not found (rules only)"), flush=True)
+# optional: the filing-level 1.01/1.02 reader (two seeds in folders agree_doc_s42/ and agree_doc_s7/ of the small `filinglens-agree` dataset)
+agree_hit = glob.glob("/kaggle/input/**/agree_doc_s42/adapter_config.json", recursive=True)
+if agree_hit:
+    os.environ["AGREE_DIR"] = os.path.dirname(os.path.dirname(agree_hit[0]))
+print("agreements filing reader:", os.environ.get("AGREE_DIR", "not found (sentence readers only)"), flush=True)
 os.environ["USE_GPU"] = "1"
 os.environ["TORCH_THREADS"] = str(os.cpu_count() or 4)
 os.environ["HF_HUB_DISABLE_XET"] = "1"

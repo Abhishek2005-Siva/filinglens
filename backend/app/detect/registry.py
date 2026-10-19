@@ -2,10 +2,13 @@
 from typing import Callable, List, Optional
 
 from .families import Auditor, Bankruptcy, Delisting, Family, Votes
-from .families2 import CFO, Acquisition, Agreements, Equity, Guidance, Restructuring
+from .agree_doc import AgreementsV2
+from .families2 import CFO, Acquisition, Equity, Guidance, Restructuring
 
 REGISTRY: List[Family] = [
-    Bankruptcy(), Delisting(), Auditor(), Votes(), CFO(), Acquisition(), Agreements(), Equity(), Guidance(), Restructuring(),
+    # AgreementsV2 reads the whole filing with two RoBERTa-large readers when the `filinglens-agree` adapters are mounted
+    # (AGREE_DIR); without them it behaves exactly like the old sentence-based Agreements detector.
+    Bankruptcy(), Delisting(), Auditor(), Votes(), CFO(), Acquisition(), AgreementsV2(), Equity(), Guidance(), Restructuring(),
 ]
 
 

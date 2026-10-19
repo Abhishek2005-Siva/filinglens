@@ -15,4 +15,4 @@ export const ACCOUNTS: AccountDef[] = [
 export const KERNEL_SLUG = 'filinglens-server'
 export const DATASET_SLUG = 'filinglens-adapters'
 // Small optional datasets mounted next to the adapters when an account has them (the server runs without them, with plainer fallbacks).
-export const EXTRA_DATASETS = ['filinglens-dates']
+export const EXTRA_DATASETS = ['filinglens-dates', 'filinglens-agree']
