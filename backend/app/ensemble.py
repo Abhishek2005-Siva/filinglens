@@ -20,7 +20,7 @@ from peft import PeftModel
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from .devices import place
-from .dates import around, extract as extract_dates
+from .dates import around, extract as extract_dates, window as date_window
 from .people import pick_name, pick_name_from_sentences
 from .item502 import regex_extract_ceo_event
 
@@ -167,7 +167,7 @@ class Ensemble:
                 m = _HONORIFIC_SURNAME.search(sentence)
                 if m:
                     name = m.group(0)  # e.g. "Mr. Janik": the filing only gives the surname here
-            when = extract_dates(sentence, name or None, around(sentences, best[0] if best else None)) if best else {"effective": None, "effectiveNote": None, "decided": None}
+            when = extract_dates(sentence, name or None, around(sentences, best[0] if best else None), role="CEO", kind=key, context=date_window(sentences, best[0])) if best else {"effective": None, "effectiveNote": None, "decided": None}
             result[key] = {
                 "found": flagged,
                 "name": name,

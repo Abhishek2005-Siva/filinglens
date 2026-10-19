@@ -14,6 +14,13 @@ import threading
 import time
 import zipfile
 
+T0 = time.time()
+
+
+def stamp(msg):
+    print(f"[{time.time() - T0:5.0f}s] {msg}", flush=True)
+
+
 APP_B64 = "__APP_B64__"
 os.environ["API_KEY"] = "__API_KEY__"
 os.environ["SEC_USER_AGENT"] = "__SEC_UA__"
@@ -25,13 +32,19 @@ IDLE_MINUTES = float("__IDLE_MINUTES__")  # stop early when nobody has used the 
 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-U", "peft", "torchao", "transformers", "fastapi", "uvicorn",
                 "pydantic", "beautifulsoup4", "lxml", "pyngrok", "sentencepiece"], check=False)
 
+stamp("packages installed")
 zipfile.ZipFile(io.BytesIO(base64.b64decode(APP_B64))).extractall("/kaggle/working/svc")
 sys.path.insert(0, "/kaggle/working/svc")
 
-hit = glob.glob("/kaggle/input/**/robertalarge_seed7/adapter_config.json", recursive=True)
+hit = glob.glob("/kaggle/input/**/other/ceo_filing/adapter_config.json", recursive=True)
 if not hit:
-    raise SystemExit("adapter dataset not found under /kaggle/input")
-os.environ["MODEL_DIR"] = os.path.dirname(os.path.dirname(hit[0]))
+    raise SystemExit("adapter dataset not found under /kaggle/input (expected other/ceo_filing/)")
+os.environ["MODEL_DIR"] = os.path.dirname(os.path.dirname(os.path.dirname(hit[0])))
+# optional: the trained CEO/CFO date tagger. Kaggle mounts the small `filinglens-dates` dataset with the adapter files at its root.
+dates_hit = glob.glob("/kaggle/input/**/filinglens-dates/adapter_config.json", recursive=True) or glob.glob("/kaggle/input/**/dates502/adapter_config.json", recursive=True)
+if dates_hit:
+    os.environ["DATES_DIR"] = os.path.dirname(dates_hit[0])
+print("date tagger:", os.environ.get("DATES_DIR", "not found (rules only)"), flush=True)
 os.environ["USE_GPU"] = "1"
 os.environ["TORCH_THREADS"] = str(os.cpu_count() or 4)
 os.environ["HF_HUB_DISABLE_XET"] = "1"
@@ -41,7 +54,7 @@ import torch  # noqa: E402
 import uvicorn  # noqa: E402
 from pyngrok import conf, ngrok  # noqa: E402
 
-print(f"CUDA: {torch.cuda.is_available()} x{torch.cuda.device_count()}", flush=True)
+stamp(f"torch imported; CUDA: {torch.cuda.is_available()} x{torch.cuda.device_count()}")
 
 from app.main import app, start_prewarm  # noqa: E402  (importing starts loading the CEO ensemble in the background)
 
@@ -67,9 +80,9 @@ while tunnel is None:
     except Exception as exc:
         if time.time() - t_wait > 20 * 60:
             raise SystemExit(f"the ngrok address stayed busy for 20 minutes: {exc}")
-        print(f"ngrok address busy (another server may still be running); retrying in 30 s: {str(exc)[:120]}", flush=True)
+        stamp(f"ngrok address busy (another server may still be running); retrying in 30 s: {str(exc)[:200]}")
         time.sleep(30)
-print("PUBLIC_URL", tunnel.public_url, flush=True)
+stamp("PUBLIC_URL " + tunnel.public_url)
 
 start_prewarm()
 server = uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=7860, log_level="warning"))

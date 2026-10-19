@@ -15,7 +15,7 @@ It needs, in Vercel's environment settings: `KAGGLE_TOKEN_<ACCOUNT>` for each ac
 The accounts are listed in `api/_accounts.ts`.
 
 ## Manual setup (command line)
-1. Upload the adapters as a private Kaggle dataset (folder layout: `robertalarge_seed7/`, `deberta_seed42/`, `other/<name>/`).
+1. Upload the adapters as a private Kaggle dataset (folder layout: `other/<name>/`, including `other/ceo_filing/` for the CEO reader; the old `robertalarge_seed7/` and `deberta_seed42/` folders are no longer read).
 2. Create a free ngrok account and claim a free static domain. Put these in the repo-root `.env` (git-ignored):
    `NGROK_AUTHTOKEN`, `NGROK_DOMAIN` (and `SEC_USER_AGENT`).
 3. Point the site at the tunnel: set the Vercel env `MODEL_URL` to `https://<your ngrok domain>` (the API key stays the same).

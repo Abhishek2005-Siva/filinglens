@@ -148,13 +148,13 @@ export default function Overview() {
             <BarChart bars={progress} min={0.8} max={0.875} ariaLabel="Overall accuracy score of each model generation, rising from 0.8126 to 0.8673" />
           </div>
           <div className="card">
-            <h3>The winner for CEO changes: a panel of three AI readers</h3>
+            <h3>The winner for CEO changes: one reader that sees the whole section</h3>
             <p>
-              Instead of trusting one AI, three different ones read every sentence. Two are <strong>RoBERTa-large</strong> models and one is <strong>DeBERTa-v3</strong>,
-              a different design with different strengths. A sentence is flagged only if at least two of them agree <em>and</em> are at least 70% sure.
+              The earlier winner was a panel of three AI readers that each judged one sentence at a time. It has been replaced by a single <strong>RoBERTa-large</strong> reader
+              that reads all the CEO-related sentences of the section together, so it can tell “will continue as CEO” from a real change using the sentences around it.
             </p>
             <p className="muted">
-              Mixing different designs beat using three copies of the same one in all four test months. Its overall score: <strong>0.867</strong> out of 1.
+              Trained on 8,019 real filings and tested on 1,070 filings from four months it never saw, it beat the old panel on both questions: new CEO <strong>0.920</strong> (was 0.873) and CEO leaving <strong>0.868</strong> (was 0.794).
             </p>
             <a className="btn" href="#/models">Read the full comparison</a>
           </div>

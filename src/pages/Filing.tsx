@@ -17,7 +17,7 @@ function Panel({ kind, ex }: { kind: 'appointed' | 'resigned'; ex: Extraction })
         <span className={`kind k-${kind}`}>{kind === 'appointed' ? '＋' : '−'}</span>
         <div>
           <h3>{title}</h3>
-          <p className="muted small">{ex.found ? `${ex.votesFor} of 3 readers agreed` : 'Not found in this filing'}</p>
+          <p className="muted small">{ex.found ? (ex.readers && ex.readers.length > 1 ? `${ex.votesFor} of ${ex.readers.length} readers agreed` : 'Found by the AI reader') : 'Not found in this filing'}</p>
         </div>
       </div>
       {ex.found && (
@@ -30,7 +30,7 @@ function Panel({ kind, ex }: { kind: 'appointed' | 'resigned'; ex: Extraction })
           </dl>
           <h4>Sentence the AI relied on</h4>
           <blockquote><Highlight text={ex.sentence ?? ''} names={[ex.name ?? '']} /></blockquote>
-          <h4>How each reader voted</h4>
+          <h4>{ex.readers && ex.readers.length > 1 ? 'How each reader voted' : 'How sure the reader was'}</h4>
           <ul className="votes">
             {ex.readers?.map((r) => (
               <li key={r.reader} className={r.voted ? 'yes' : 'no'}>

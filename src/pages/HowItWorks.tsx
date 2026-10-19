@@ -17,7 +17,7 @@ const steps = [
   {
     n: 3,
     title: 'Send each section to the right AI readers',
-    body: 'Each type of event has its own AI detector, trained on real filings, and every filing is checked by all eleven of them. Each only speaks up when its Item is in the filing. CEO changes are read sentence by sentence by three readers that vote. Bankruptcy, delisting and CFO changes are read as a whole by several readers that average their answers. Acquisitions, agreements, equity sales and restructuring each have their own readers, and earnings guidance is read from the attached press release.',
+    body: 'Each type of event has its own AI detector, trained on real filings, and every filing is checked by all eleven of them. Each only speaks up when its Item is in the filing. CEO changes are read by one reader that sees all the CEO-related sentences of the section together. Bankruptcy, delisting and CFO changes are read as a whole by several readers that average their answers. Acquisitions, agreements, equity sales and restructuring each have their own readers, and earnings guidance is read from the attached press release.',
   },
   {
     n: 4,

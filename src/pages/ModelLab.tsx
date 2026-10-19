@@ -43,12 +43,12 @@ export default function ModelLab() {
           <h3>The chosen CEO model in numbers</h3>
           <table className="kv">
             <tbody>
-              <tr><th>Design</th><td>2× RoBERTa-large + 1× DeBERTa-v3-base</td></tr>
-              <tr><th>Decision rule</th><td>≥ 2 of 3 agree, each ≥ 70% sure</td></tr>
-              <tr><th>Overall score</th><td>0.8673 (4-month average)</td></tr>
-              <tr><th>Best month</th><td>March 2025 — 0.8812</td></tr>
-              <tr><th>Weakest month</th><td>June 2025 — 0.8557</td></tr>
-              <tr><th>Speed</th><td>A month of filings in ~11 minutes on a GPU</td></tr>
+              <tr><th>Design</th><td>1× RoBERTa-large reading the whole section</td></tr>
+              <tr><th>Decision rule</th><td>Probability ≥ 50% per label</td></tr>
+              <tr><th>New CEO score</th><td>F1 0.920 (old panel 0.873)</td></tr>
+              <tr><th>CEO leaving score</th><td>F1 0.868 (old panel 0.794)</td></tr>
+              <tr><th>Test</th><td>1,070 filings from 4 unseen months, hand-checked</td></tr>
+              <tr><th>Speed</th><td>One pass per filing instead of one per sentence</td></tr>
             </tbody>
           </table>
         </div>

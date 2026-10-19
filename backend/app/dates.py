@@ -87,11 +87,49 @@ def _find(sentence: str, name: Optional[str] = None) -> Dict[str, Optional[str]]
     return out
 
 
-def extract(sentence: Optional[str], name: Optional[str] = None, neighbours: Sequence[str] = ()) -> Dict[str, Optional[str]]:
+def window(sentences: Sequence[str], index: Optional[int], span: int = 2) -> str:
+    """The passage the trained date tagger reads: the evidence sentence and `span` sentences each side, as it was trained."""
+    if index is None or not (0 <= index < len(sentences)):
+        return ""
+    return re.sub(r"\s+", " ", " ".join(sentences[max(0, index - span): index + span + 1])).strip()
+
+
+def _from_model(res: Dict[str, Optional[dict]]) -> Dict[str, Optional[str]]:
+    out: Dict[str, Optional[str]] = {"effective": None, "effectiveNote": None, "decided": None}
+    eff, dec = res.get("eff"), res.get("dec")
+    if eff:
+        iso = parse_date(eff["text"])
+        if iso is None:
+            m = re.search(_DATE, eff["text"], re.I)
+            iso = parse_date(m.group(0)) if m else None
+        if iso:
+            out["effective"] = iso
+        elif re.search(r"(?i)immediate", eff["text"]):
+            out["effectiveNote"] = "immediately"
+        else:
+            t = eff["text"].strip()
+            out["effectiveNote"] = t if re.match(r"(?i)(upon|following|after|as of|at|when|once)\b", t) else f"upon {t}"
+    if dec:
+        out["decided"] = parse_date(dec["text"]) or (parse_date(re.search(_DATE, dec["text"], re.I).group(0)) if re.search(_DATE, dec["text"], re.I) else None)
+    return out
+
+
+def extract(sentence: Optional[str], name: Optional[str] = None, neighbours: Sequence[str] = (), role: Optional[str] = None,
+            kind: Optional[str] = None, context: Optional[str] = None) -> Dict[str, Optional[str]]:
     """{'effective': ISO date or None, 'effectiveNote': 'immediately' / 'upon ...' or None, 'decided': ISO date or None}.
 
-    Reads the evidence sentence first. If it gives no effective date, looks in the sentences around it that are about the
-    same person (the date often sits in the next sentence: 'Mr. Lee will assume the role effective June 1, 2025')."""
+    With role ('CEO' / 'CFO'), kind ('appointed' / 'resigned') and context (dates.window(...)) the trained date tagger is used when
+    its adapter is available. Otherwise the evidence sentence is read with patterns; if it gives no effective date, the sentences
+    around it that are about the same person are tried (the date often sits in the next sentence)."""
+    if role and kind and context:
+        from . import dates_model
+
+        t = dates_model.tagger()
+        if t is not None:
+            try:
+                return _from_model(t.tag(f"{role} {kind}" + (f": {name}" if name else ""), context))
+            except Exception:
+                pass  # fall through to the rules
     out = _find(sentence or "", name)
     if out["effective"] is None and out["effectiveNote"] is None:
         for s in neighbours:

@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { strToU8, zipSync } from 'fflate'
-import { ACCOUNTS, DATASET_SLUG, KERNEL_SLUG, type AccountDef } from './_accounts.js'
+import { ACCOUNTS, DATASET_SLUG, EXTRA_DATASETS, KERNEL_SLUG, type AccountDef } from './_accounts.js'
 import { datasetsApi, kaggle, KaggleError, kernelsApi, seconds } from './_kaggle.js'
 
 // Control of where the model server runs (which Kaggle account's GPU) and when it is on. Open to every visitor of the site.
@@ -41,6 +41,7 @@ interface AccountInfo {
   main: boolean
   configured: boolean
   adaptersReady: boolean
+  extras: string[] // optional datasets that are ready on this account
   usedHours: number
   reservedHours: number
   totalHours: number
@@ -53,15 +54,16 @@ interface AccountInfo {
 
 async function inspect(a: AccountDef): Promise<AccountInfo> {
   const base: AccountInfo = {
-    id: a.id, label: a.label, main: !!a.main, configured: !!tokenOf(a), adaptersReady: false,
+    id: a.id, label: a.label, main: !!a.main, configured: !!tokenOf(a), adaptersReady: false, extras: [],
     usedHours: 0, reservedHours: 0, totalHours: 30, remainingHours: 0, refreshTime: '', kernel: 'NONE',
   }
   const token = tokenOf(a)
   if (!token) return { ...base, error: 'No Kaggle token configured for this account.' }
-  const [quota, ds, ker] = await Promise.allSettled([
+  const [quota, ds, ker, ...ex] = await Promise.allSettled([
     kaggle(token, kernelsApi, 'GetAcceleratorQuotaStatistics', {}),
     kaggle(token, datasetsApi, 'GetDatasetStatus', { ownerSlug: a.id, datasetSlug: DATASET_SLUG }),
     kaggle(token, kernelsApi, 'GetKernelSessionStatus', { userName: a.id, kernelSlug: KERNEL_SLUG }),
+    ...EXTRA_DATASETS.map((slug) => kaggle(token, datasetsApi, 'GetDatasetStatus', { ownerSlug: a.id, datasetSlug: slug })),
   ])
   const out = { ...base }
   if (quota.status === 'fulfilled') {
@@ -75,8 +77,10 @@ async function inspect(a: AccountDef): Promise<AccountInfo> {
     out.error = `Could not read the GPU quota: ${quota.reason?.message ?? 'unknown error'}`
   }
   out.adaptersReady = ds.status === 'fulfilled' && ds.value.status === 'READY'
+  out.extras = EXTRA_DATASETS.filter((_, i) => ex[i]?.status === 'fulfilled' && (ex[i] as PromiseFulfilledResult<{ status?: string }>).value.status === 'READY')
   if (ker.status === 'fulfilled') {
-    out.kernel = (ker.value.status as AccountInfo['kernel']) ?? 'NONE'
+    // An empty answer means the first state of the enum, QUEUED (proto3 leaves the default value out): the run is waiting for a free GPU.
+    out.kernel = (ker.value.status as AccountInfo['kernel']) ?? 'QUEUED'
     out.failureMessage = ker.value.failureMessage || undefined
   }
   return out
@@ -115,7 +119,7 @@ function buildScript(runHours: number): string {
   return s
 }
 
-async function pushKernel(a: AccountDef, runHours: number) {
+async function pushKernel(a: AccountDef, runHours: number, extras: string[] = []) {
   return kaggle<{ url?: string; versionNumber?: number; error?: string }>(tokenOf(a), kernelsApi, 'SaveKernel', {
     slug: `${a.id}/${KERNEL_SLUG}`,
     newTitle: KERNEL_SLUG,
@@ -126,7 +130,7 @@ async function pushKernel(a: AccountDef, runHours: number) {
     enableGpu: true,
     enableTpu: false,
     enableInternet: true,
-    datasetDataSources: [`${a.id}/${DATASET_SLUG}`],
+    datasetDataSources: [`${a.id}/${DATASET_SLUG}`, ...extras.map((slug) => `${a.id}/${slug}`)],
     competitionDataSources: [],
     kernelDataSources: [],
     modelDataSources: [],
@@ -172,7 +176,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!def || !tokenOf(def)) return res.status(400).json({ error: 'bad_request', message: 'Unknown account.' })
       try {
         const st = await kaggle<{ status?: string; failureMessage?: string }>(tokenOf(def), kernelsApi, 'GetKernelSessionStatus', { userName: def.id, kernelSlug: KERNEL_SLUG })
-        return res.status(200).json({ account: def.id, status: st.status ?? 'NONE', failureMessage: st.failureMessage || undefined, kaggleUrl: `https://www.kaggle.com/code/${def.id}/${KERNEL_SLUG}` })
+        return res.status(200).json({ account: def.id, status: st.status ?? 'QUEUED', failureMessage: st.failureMessage || undefined, kaggleUrl: `https://www.kaggle.com/code/${def.id}/${KERNEL_SLUG}` })
       } catch {
         return res.status(200).json({ account: def.id, status: 'NONE', kaggleUrl: `https://www.kaggle.com/code/${def.id}/${KERNEL_SLUG}` })
       }
@@ -242,7 +246,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // leftovers on other accounts (finished or older runs) are cleared so only one server can hold the public address
         await stopRunning(infos.filter((i) => i.id !== id))
         try {
-          const r = await pushKernel(def, runHours)
+          const r = await pushKernel(def, runHours, info.extras)
           if (r.error) throw new KaggleError(400, r.error)
           return res.status(200).json({ ok: true, account: id, runHours, url: r.url, remainingHours: info.remainingHours, skipped: tried, bootMinutes: 12 })
         } catch (e) {

@@ -42,7 +42,7 @@ export default function WaitLoader({ job, waking, wasAsleep }: Props) {
     eta = waking.estimate - waking.elapsed
     late = eta <= 0
     pct = Math.min(0.9, waking.elapsed / waking.estimate) * 0.25
-    detail = 'Loading three AI readers into memory…'
+    detail = 'Loading the AI readers into memory…'
   } else if (job) {
     step = rank[job.stage] ?? 1
     const since = (now - sync.current.at) / 1000
@@ -52,12 +52,7 @@ export default function WaitLoader({ job, waking, wasAsleep }: Props) {
     pct = 0.25 + 0.75 * (job.progress ?? 0)
     if (job.stage === 'detectors') detail = job.detail ?? 'Checking for other events…'
     else if (job.stage === 'reading' && job.unitsTotal) {
-      const n = job.sentenceCount ?? 0
-      const perReader = Math.max(1, n)
-      const done = job.unitsDone ?? 0
-      const reader = Math.min(3, Math.floor(done / perReader) + 1)
-      const sentence = Math.min(n, done - (reader - 1) * perReader)
-      detail = `Reader ${reader} of 3 · sentence ${Math.max(0, sentence)} of ${n}`
+      detail = `Reading the leadership section (${job.sentenceCount ?? '…'} sentences)`
     } else if (job.stage === 'fetching' || job.stage === 'queued') detail = 'Contacting sec.gov…'
     else if (job.stage === 'locating') detail = 'Searching the filing for Item 5.02…'
     else if (job.stage === 'splitting') detail = `Found ${job.sentenceCount ?? '…'} sentences to read`

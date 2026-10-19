@@ -18,7 +18,7 @@ from . import context as ctxmod
 from .deal_text import deal_sentences, extract_amounts
 from .families import SECTION_CAP, DistressFamily, Family, _load
 from .items import find_item_section, list_headings, normalize_filing_text
-from ..dates import around, extract as extract_dates
+from ..dates import extract as extract_dates, window as date_window
 from ..people import _APPOINT, _LEAVE, pick_name, pick_name_from_sentences
 from .labelers201 import mark_self, self_aliases
 from .deal_text import strip_caption
@@ -86,7 +86,7 @@ class CFO(DistressFamily):
             name = fields.get(f"{kind}_name") or (pick_name(evidence, kind, section) if evidence else None) or pick_name_from_sentences(cfo_sents, kind, section)
             interim = bool(fields.get(f"{kind}_interim"))
             idx = all_sents.index(evidence) if evidence in all_sents else None
-            when = extract_dates(evidence, name, around(all_sents, idx))
+            when = extract_dates(evidence, name, [s for s in all_sents[max(0, (idx or 0) - 2):(idx or 0) + 3] if s != evidence] if idx is not None else all_sents[:6], role="CFO", kind=kind, context=date_window(all_sents, idx))
             ev.update({
                 "kind": kind, "name": name, "interim": interim, "effective": when["effective"], "effectiveNote": when["effectiveNote"], "decided": when["decided"],
                 "title": ("New interim CFO named" if interim else "New CFO named") if kind == "appointed" else ("Interim CFO leaving" if interim else "CFO leaving"),

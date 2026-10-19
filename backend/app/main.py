@@ -1,4 +1,4 @@
-"""Model service: given an SEC filing, find Item 5.02, run the 3-reader ensemble, return the extraction.
+"""Model service: given an SEC filing, find Item 5.02, run the CEO reader and the other detectors, return the extraction.
 
 Runs as a Hugging Face Docker Space. Jobs are async (CPU inference takes a while), so the
 front-end starts a job and polls it. Only one filing is processed at a time.
@@ -45,7 +45,7 @@ _model = {"ensemble": None, "error": None, "loading": True, "load_seconds": None
 def _load() -> None:
     t0 = time.time()
     try:
-        from .ensemble import Ensemble
+        from .ceo_model import Ensemble
 
         _model["ensemble"] = Ensemble()
         _model["load_seconds"] = round(time.time() - t0, 1)
@@ -134,7 +134,7 @@ def _run(job: dict, cik: str, accession: str, cache: bool = True) -> None:
             _set(job, stage="splitting", progress=0.3)
             sentences = split_sentences(section)
             gate_skips = CEO_HINT.search(section) is None and os.getenv("CEO_GATE", "1") == "1"
-            total_units = max(1, len(sentences) * 3)
+            total_units = 1  # the CEO model reads the whole section in one pass
             _set(job, stage="splitting", progress=0.3, sentenceCount=len(sentences), unitsTotal=0 if gate_skips else total_units, unitsDone=0)
             result["item502Found"] = True
             result["section"] = section[:8000]
@@ -146,7 +146,7 @@ def _run(job: dict, cik: str, accession: str, cache: bool = True) -> None:
                 def on_progress(done: int, total: int, reader_idx: int) -> None:
                     _set(job, unitsDone=done, readersDone=reader_idx, progress=0.35 + 0.5 * done / total)
 
-                result.update(ens.analyze(sentences, on_progress))
+                result.update(ens.analyze(sentences, on_progress, plain=text, filing_date=meta.filed))
 
         # ---- every other detector whose Item is present in this filing ----
         def on_status(title: str, cold: bool) -> None:
@@ -169,13 +169,21 @@ def _models_status() -> list:
     ceo_state = "ready" if ens is not None else "error" if _model["error"] else "loading"
     out = [{
         "key": "ceo", "item": "5.02", "title": "CEO appointed or leaving", "state": ceo_state, "error": _model["error"],
-        "lastError": _model["last_error"], "adapters": 3, "loadSeconds": _model["load_seconds"],
+        "lastError": _model["last_error"], "adapters": len(ens.readers) if ens else 1, "loadSeconds": _model["load_seconds"],
         "readers": ens.reader_names if ens else [],
     }]
     for f in REGISTRY:
         out.append({
             "key": f.key, "item": f.item, "title": f.title, "state": f.state, "error": f.error, "lastError": f.last_error,
             "adapters": len(f.models), "loadSeconds": f.load_seconds, "readers": [],
+        })
+    from . import dates_model
+
+    d = dates_model.status()
+    if d["state"] != "missing":  # without its adapter the plain pattern reader is used and nothing needs to be shown
+        out.append({
+            "key": "dates", "item": "5.02", "title": "CEO / CFO date reader", "state": d["state"], "error": d["error"],
+            "lastError": None, "adapters": 1, "loadSeconds": None, "readers": [],
         })
     return out
 
@@ -236,7 +244,7 @@ def selftest() -> dict:
                 enc = r.tok(["The Company announced a change on March 3, 2025."], truncation=True, max_length=64, return_tensors="pt").to(r.model.device)
                 with torch.inference_mode():
                     logits = r.model(**enc).logits
-                good = logits.shape[-1] == 3 and bool(torch.isfinite(logits).all())
+                good = logits.shape[-1] == r.n_labels and bool(torch.isfinite(logits).all())
                 models.append({"name": r.name, "ok": good, "ms": round((time.time() - t) * 1000), "error": None if good else "unexpected output"})
             except Exception as exc:
                 models.append({"name": r.name, "ok": False, "ms": 0, "error": f"{type(exc).__name__}: {exc}"})
@@ -255,6 +263,12 @@ def start_prewarm() -> None:
                 fam.ensure_loaded()
             except Exception:
                 pass  # recorded on the family (state "error") and shown in the status panel
+        try:
+            from . import dates_model
+
+            dates_model.tagger()  # the date reader for CEO / CFO changes loads with the others
+        except Exception:
+            pass
         _activity["t"] = time.time()  # all detectors are ready: the idle clock starts now
 
     threading.Thread(target=go, daemon=True).start()
