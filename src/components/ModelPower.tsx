@@ -28,6 +28,7 @@ export default function ModelPower() {
   const [sum, setSum] = useState<ReturnType<typeof summarize> | null>(DEMO ? summarize(DEMO_MODELS) : null)
   const [boot, setBoot] = useState<BootState | null>(null)
   const [bootOpen, setBootOpen] = useState(false)
+  const [switching, setSwitching] = useState(false)
   const [queued, setQueued] = useState(false) // a turn-off is waiting for a running analysis to finish
   const [running, setRunning] = useState(0) // analyses running on the server
   const run = useRef(0) // bumped to cancel an older watch loop
@@ -242,6 +243,30 @@ export default function ModelPower() {
     setState('error')
   }
 
+  /** Cancels a start that is still booting or waiting in Kaggle's queue, then lets the person pick another account. */
+  const switchAccount = async () => {
+    const account = live.current?.account
+    setSwitching(true)
+    run.current++ // stop following this start
+    try {
+      await hostCall('stop', { force: true, ...(account ? { account } : {}) })
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Could not stop that start. Try again.')
+      setSwitching(false)
+      if (account) void watch(account, bootEstimate()) // keep following it
+      return
+    }
+    setSwitching(false)
+    markOff()
+    clearStarting()
+    setBoot(null)
+    live.current = undefined
+    setBootOpen(false)
+    setMsg('')
+    setState('off')
+    setPicker(true)
+  }
+
   const retry = () => {
     run.current++
     setBoot(null)
@@ -253,7 +278,7 @@ export default function ModelPower() {
     setPicker(true)
   }
 
-  const progressPanel = bootOpen && boot && <StartProgress b={boot} onRetry={retry} onClose={() => setBootOpen(false)} />
+  const progressPanel = bootOpen && boot && <StartProgress b={boot} onRetry={retry} onClose={() => setBootOpen(false)} onSwitch={() => void switchAccount()} switching={switching} />
 
   if (state === 'on') {
     const bad = !!sum && sum.problems > 0

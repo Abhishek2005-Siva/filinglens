@@ -45,7 +45,7 @@ export function stepsFor(b: BootState): { label: string; detail: string; state: 
 
 const ICON: Record<StepState, string> = { done: '✓', active: '…', todo: '', failed: '✕' }
 
-export default function StartProgress({ b, onRetry, onClose }: { b: BootState; onRetry: () => void; onClose: () => void }) {
+export default function StartProgress({ b, onRetry, onClose, onSwitch, switching }: { b: BootState; onRetry: () => void; onClose: () => void; onSwitch?: () => void; switching?: boolean }) {
   const steps = stepsFor(b)
   const left = Math.max(0, b.estimate - b.elapsed)
   const slow = b.elapsed > b.estimate + 300 && !b.failure && !b.serverUp
@@ -98,6 +98,12 @@ export default function StartProgress({ b, onRetry, onClose }: { b: BootState; o
         <div className="explain warn">
           This is taking much longer than usual. Kaggle says <b>{b.kaggle || 'unknown'}</b>. Open the Kaggle log to see where it is stuck, or start on a different account.
           <div className="boot-actions"><a className="btn small" href={b.kaggleUrl} target="_blank" rel="noreferrer">Open the Kaggle log ↗</a></div>
+        </div>
+      )}
+
+      {!b.failure && !b.serverUp && onSwitch && (
+        <div className="boot-actions">
+          <button type="button" className="btn small" onClick={onSwitch} disabled={switching}>{switching ? 'Stopping…' : 'Stop this and use a different account'}</button>
         </div>
       )}
 

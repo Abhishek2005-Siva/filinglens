@@ -224,37 +224,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (alreadyOn && !body.dryRun) {
         return res.status(409).json({ error: 'already_running', message: `A server is already running on ${alreadyOn.label}. If it is not reachable yet it is still booting. To use a different account, turn it off first.`, account: alreadyOn.id })
       }
+      // Only the account the person chose is ever used. There is no automatic fallback to another account.
       const wanted = body.account && body.account !== 'auto' ? body.account : ''
-      const order = [
-        ...(wanted ? [wanted] : []),
-        ...ACCOUNTS.filter((a) => a.main).map((a) => a.id),
-        ...ACCOUNTS.map((a) => a.id),
-      ].filter((id, i, arr) => arr.indexOf(id) === i)
-      const tried: { account: string; reason: string }[] = []
-      for (const id of order) {
-        const info = infos.find((i) => i.id === id)!
-        const def = ACCOUNTS.find((a) => a.id === id)!
-        if (!eligible(info)) {
-          tried.push({ account: id, reason: !info.configured ? 'not configured' : !info.adaptersReady ? 'model files not uploaded yet' : info.kernel === 'RUNNING' || info.kernel === 'QUEUED' ? 'already running' : 'out of GPU hours' })
-          continue
-        }
-        const runHours = Math.max(1, Math.min(Number(body.runHours) || DEFAULT_RUN_HOURS, Math.floor(info.remainingHours - 0.25)))
-        if (body.dryRun) {
-          const script = buildScript(runHours) // proves the app code and secrets are all available; nothing is pushed or stopped
-          return res.status(200).json({ ok: true, dryRun: true, account: id, runHours, scriptKB: Math.round(script.length / 1024), remainingHours: info.remainingHours })
-        }
-        // leftovers on other accounts (finished or older runs) are cleared so only one server can hold the public address
-        await stopRunning(infos.filter((i) => i.id !== id))
-        try {
-          const r = await pushKernel(def, runHours, info.extras)
-          if (r.error) throw new KaggleError(400, r.error)
-          return res.status(200).json({ ok: true, account: id, runHours, url: r.url, remainingHours: info.remainingHours, skipped: tried, bootMinutes: 12 })
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : 'failed'
-          tried.push({ account: id, reason: /quota/i.test(msg) ? 'out of GPU hours' : msg.slice(0, 120) })
-        }
+      if (!wanted) return res.status(400).json({ error: 'choose_account', message: 'Choose which Kaggle account to start the model on.' })
+      const info = infos.find((i) => i.id === wanted)
+      const def = ACCOUNTS.find((a) => a.id === wanted)
+      if (!info || !def) return res.status(400).json({ error: 'bad_request', message: 'Unknown account.' })
+      if (!eligible(info)) {
+        const why = !info.configured ? 'it has no Kaggle token set up on the site' : !info.adaptersReady ? 'the model files are not uploaded to it yet' : info.kernel === 'RUNNING' || info.kernel === 'QUEUED' ? 'a server is already running on it' : 'it is out of GPU hours'
+        return res.status(409).json({ error: 'account_unavailable', message: `${info.label} cannot start the server right now: ${why}. Pick another account.`, account: wanted })
       }
-      return res.status(409).json({ error: 'no_account', message: 'No Kaggle account has GPU time available right now.', tried })
+      const runHours = Math.max(1, Math.min(Number(body.runHours) || DEFAULT_RUN_HOURS, Math.floor(info.remainingHours - 0.25)))
+      if (body.dryRun) {
+        const script = buildScript(runHours) // proves the app code and secrets are all available; nothing is pushed or stopped
+        return res.status(200).json({ ok: true, dryRun: true, account: wanted, runHours, scriptKB: Math.round(script.length / 1024), remainingHours: info.remainingHours })
+      }
+      // leftovers on other accounts (finished or older runs) are cleared so only one server can hold the public address
+      await stopRunning(infos.filter((i) => i.id !== wanted))
+      try {
+        const r = await pushKernel(def, runHours, info.extras)
+        if (r.error) throw new KaggleError(400, r.error)
+        return res.status(200).json({ ok: true, account: wanted, runHours, url: r.url, remainingHours: info.remainingHours, skipped: [], bootMinutes: 12 })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'failed'
+        const friendly = /Maximum batch GPU session count/i.test(msg)
+          ? 'Kaggle allows only 2 GPU notebooks at a time on an account and this one already has 2 running (probably training runs).'
+          : /quota/i.test(msg) ? 'it is out of GPU hours' : msg.slice(0, 160)
+        return res.status(409).json({ error: 'account_unavailable', message: `${info.label} could not start the server: ${friendly} Pick another account.`, account: wanted })
+      }
     }
 
     return res.status(400).json({ error: 'bad_request', message: 'Unknown action.' })

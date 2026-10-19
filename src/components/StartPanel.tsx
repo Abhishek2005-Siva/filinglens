@@ -40,7 +40,8 @@ export default function StartPanel({ onClose, onStarted, onAlreadyRunning }: Pro
     setBusy(true)
     setErr('')
     try {
-      onStarted(await hostCall<StartResult>('start', { account: pick || 'auto', runHours: hours }))
+      if (!pick) throw new Error('Choose an account first.')
+      onStarted(await hostCall<StartResult>('start', { account: pick, runHours: hours }))
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not start the server.')
     } finally {
