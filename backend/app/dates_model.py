@@ -23,6 +23,21 @@ def _adapter_dir() -> Optional[str]:
     return None
 
 
+def _trim(text: str, s: int, e: int) -> tuple:
+    """A name span: whole words only, no dangling punctuation or a stray 'and'."""
+    while s > 0 and text[s - 1].isalnum() and text[s].isalnum():
+        s -= 1
+    while e < len(text) and text[e - 1].isalnum() and text[e].isalnum():
+        e += 1
+    while e > s and text[e - 1] in " ,.;:)(\"“”":
+        e -= 1
+    while s < e and text[s] in " ,.;:)(\"“”":
+        s += 1
+    span = text[s:e]
+    m = re.search(r"\s+(?:and|or)$", span)
+    return (s, e - len(m.group(0))) if m else (s, e)
+
+
 def _snap(text: str, s: int, e: int) -> tuple:
     """Widens a predicted span to whole words (and the whole date it touches); drops dangling punctuation."""
     for m in _DATE.finditer(text):
@@ -53,13 +68,16 @@ class DateTagger:
         meta = json.load(open(meta_path)) if os.path.exists(meta_path) else {}
         self.threshold = float(meta.get("threshold", 0.5))
         self.max_len = int(meta.get("max_len", 384))
+        # v1 adapters tag two things (effective, decided); v2 also tags the person's name and does not see the name in its header
+        self.channels = ["eff", "dec", "name"][: len(meta.get("channels", ["effective", "decided"]))]
+        self.has_name = "name" in self.channels
         self.tok = AutoTokenizer.from_pretrained(directory)
-        model = AutoModelForTokenClassification.from_pretrained(base, num_labels=2, torch_dtype=torch.float32)
+        model = AutoModelForTokenClassification.from_pretrained(base, num_labels=len(self.channels), torch_dtype=torch.float32)
         self.model = place(PeftModel.from_pretrained(model, directory).merge_and_unload().float().eval())
         self.torch = torch
 
     def tag(self, header: str, passage: str) -> Dict[str, Optional[dict]]:
-        """{'eff': {'text','start','end','conf'} or None, 'dec': ...}, spans measured in `passage`."""
+        """{'eff': {'text','start','end','conf'} or None, 'dec': ..., 'name': ...}, spans measured in `passage`."""
         enc = self.tok(header, passage, truncation="only_second", max_length=self.max_len, return_offsets_mapping=True, return_tensors="pt")
         offsets = enc.pop("offset_mapping")[0].tolist()
         seq = enc.sequence_ids(0)
@@ -67,7 +85,7 @@ class DateTagger:
             logits = self.model(**{k: v.to(self.model.device) for k, v in enc.items()}).logits[0].float().cpu()
         probs = self.torch.sigmoid(logits).numpy()
         out: Dict[str, Optional[dict]] = {}
-        for ch, key in ((0, "eff"), (1, "dec")):
+        for ch, key in enumerate(self.channels):
             runs, cur = [], []
             for t, (sid, (s, e)) in enumerate(zip(seq, offsets)):
                 if sid == 1 and probs[t, ch] >= self.threshold:
@@ -81,7 +99,7 @@ class DateTagger:
                 out[key] = None
                 continue
             best = max(runs, key=lambda r: sum(x[2] for x in r) / len(r))
-            s, e = _snap(passage, best[0][0], best[-1][1])
+            s, e = _snap(passage, best[0][0], best[-1][1]) if key != "name" else _trim(passage, best[0][0], best[-1][1])
             out[key] = {"text": passage[s:e], "start": s, "end": e, "conf": round(sum(x[2] for x in best) / len(best), 4)} if e > s else None
         return out
 
