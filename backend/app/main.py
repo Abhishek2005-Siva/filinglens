@@ -17,6 +17,7 @@ import re
 
 from .item502 import ITEM_HEADING_RE, find_item_502_section, split_sentences
 from .detect.fetch import fetch_all
+from .detect.items import find_item_section
 from .detect.registry import REGISTRY, run_all, selftest_family
 from .sec_fetch import filing_txt_url
 
@@ -129,7 +130,9 @@ def _run(job: dict, cik: str, accession: str, cache: bool = True) -> None:
         }
 
         # ---- CEO appointed / resigned (Item 5.02), unchanged ----
-        section = find_item_502_section(text)
+        # The standard section finder (the one the models were trained with). The older finder sometimes returns a tiny cross-reference
+        # ("... Item 5.02 below.") instead of the real section, which made the CEO check skip real events and left names and dates unread.
+        section = find_item_section(text, "5.02") or find_item_502_section(text)
         if section is not None:
             _set(job, stage="splitting", progress=0.3)
             sentences = split_sentences(section)
