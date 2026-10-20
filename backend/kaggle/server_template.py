@@ -7,7 +7,9 @@ It stops by itself after RUN_HOURS, or earlier after IDLE_MINUTES (default 7) wi
 import base64
 import glob
 import io
+import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -29,8 +31,9 @@ NGROK_DOMAIN = "__NGROK_DOMAIN__"
 RUN_HOURS = float("__RUN_HOURS__")
 IDLE_MINUTES = float("__IDLE_MINUTES__")  # stop early when nobody has used the server for this long (saves GPU quota)
 
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-U", "peft", "torchao", "transformers", "fastapi", "uvicorn",
-                "pydantic", "beautifulsoup4", "lxml", "pyngrok", "sentencepiece"], check=False)
+# Upgrade only what the models need; the rest is installed only if the image lacks it (a blanket -U costs time and risks surprises).
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-U", "peft", "torchao", "transformers"], check=False)
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "fastapi", "uvicorn", "pydantic", "beautifulsoup4", "lxml", "sentencepiece"], check=False)
 
 stamp("packages installed")
 zipfile.ZipFile(io.BytesIO(base64.b64decode(APP_B64))).extractall("/kaggle/working/svc")
@@ -63,13 +66,10 @@ print("models:", os.environ["MODEL_DIR"], flush=True)
 
 import torch  # noqa: E402
 import uvicorn  # noqa: E402
-from pyngrok import conf, ngrok  # noqa: E402
 
 stamp(f"torch imported; CUDA: {torch.cuda.is_available()} x{torch.cuda.device_count()}")
 
 from app.main import app, start_prewarm  # noqa: E402  (importing starts loading the CEO ensemble in the background)
-
-conf.get_default().auth_token = NGROK_TOKEN
 
 # If an older instance still holds the static domain, ask it to stop (servers from this version on understand /shutdown),
 # then keep retrying for a while in case it is slow to release the address.
@@ -84,16 +84,71 @@ try:
 except Exception as exc:  # no previous server, or an older one without /shutdown
     print(f"no previous server stopped ({type(exc).__name__})", flush=True)
 
-tunnel, t_wait = None, time.time()
-while tunnel is None:
-    try:
-        tunnel = ngrok.connect(7860, bind_tls=True, domain=NGROK_DOMAIN)
-    except Exception as exc:
+# ---- public address: run the ngrok agent binary directly. (pyngrok talks to the agent through an API whose fields change between
+# agent versions; on 2026-10-20 that mismatch made every connect fail with "invalid endpoint configuration" for 20 minutes.)
+NGROK_BIN = "/kaggle/working/ngrok"
+
+
+def fetch_ngrok() -> None:
+    import tarfile
+    import urllib.request
+
+    if os.path.exists(NGROK_BIN):
+        return
+    last = None
+    for url in ("https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz",
+                "https://ngrok-agent.s3.amazonaws.com/ngrok-v3-stable-linux-amd64.tgz"):
+        try:
+            data = urllib.request.urlopen(url, timeout=120).read()
+            tarfile.open(fileobj=io.BytesIO(data), mode="r:gz").extractall("/kaggle/working")
+            os.chmod(NGROK_BIN, 0o755)
+            return
+        except Exception as exc:
+            last = exc
+    raise SystemExit(f"could not download the ngrok agent: {last}")
+
+
+def open_tunnel(port: int, domain: str, token: str, wait: float = 60.0):
+    """Starts the agent and waits until the public address answers. Returns (process, public_url) or (process, None) with its output printed."""
+    import urllib.request
+
+    proc = subprocess.Popen([NGROK_BIN, "http", str(port), f"--url=https://{domain}", "--log=stdout", "--log-format=logfmt"],
+                            env={**os.environ, "NGROK_AUTHTOKEN": token}, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    lines: list = []
+
+    def drain() -> None:
+        for line in proc.stdout:  # keeps the pipe from filling up and records what the agent says
+            lines.append(line.rstrip())
+            del lines[:-40]
+
+    threading.Thread(target=drain, daemon=True).start()
+    end = time.time() + wait
+    while time.time() < end and proc.poll() is None:
+        time.sleep(1.0)
+        try:
+            tunnels = json.loads(urllib.request.urlopen("http://127.0.0.1:4040/api/tunnels", timeout=3).read()).get("tunnels", [])
+            if tunnels:
+                return proc, tunnels[0]["public_url"]
+        except Exception:
+            pass
+    if proc.poll() is None:
+        proc.kill()
+    for line in lines[-12:]:
+        stamp("ngrok: " + re.sub(r"authtoken=\S+", "authtoken=…", line)[:260])
+    return proc, None
+
+
+tunnel_proc, public_url, t_wait = None, None, time.time()
+fetch_ngrok()
+stamp("ngrok agent ready")
+while public_url is None:
+    tunnel_proc, public_url = open_tunnel(7860, NGROK_DOMAIN, NGROK_TOKEN)
+    if public_url is None:
         if time.time() - t_wait > 20 * 60:
-            raise SystemExit(f"the ngrok address stayed busy for 20 minutes: {exc}")
-        stamp(f"ngrok address busy (another server may still be running); retrying in 30 s: {str(exc)[:200]}")
-        time.sleep(30)
-stamp("PUBLIC_URL " + tunnel.public_url)
+            raise SystemExit("the ngrok address could not be opened for 20 minutes (see the ngrok lines above)")
+        stamp("could not open the public address (another server may still hold it); retrying in 20 s")
+        time.sleep(20)
+stamp("PUBLIC_URL " + public_url)
 
 start_prewarm()
 server = uvicorn.Server(uvicorn.Config(app, host="0.0.0.0", port=7860, log_level="warning"))
