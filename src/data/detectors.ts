@@ -22,7 +22,7 @@ export const detectors: DetectorInfo[] = [
     title: 'CEO appointed or leaving',
     icon: '👤',
     tone: 'green',
-    what: 'Finds when a company names a new CEO (including interim) or its CEO resigns, retires or is replaced.',
+    what: 'New CEO named, or CEO leaving.',
     model: 'One RoBERTa-large reader on the whole leadership section. It sees only the sentences that mention a CEO title, with dates converted to "days before filing".',
     tested: 'Four months never used in training (June 2024, June 2025, Nov 2025, May 2026): 1,070 filings, 546 hand-checked CEO events',
     metrics: [
@@ -39,7 +39,7 @@ export const detectors: DetectorInfo[] = [
     title: 'Bankruptcy or receivership',
     icon: '⚖',
     tone: 'red',
-    what: 'Finds new bankruptcy petitions, receiverships, confirmed reorganization plans and converted or dismissed cases. Pulls out the chapter, court and case number.',
+    what: 'New bankruptcy or receivership.',
     model: 'Two AI readers (RoBERTa-large + DeBERTa-v3) average their answers on the whole section. Dates are converted to "days before filing" so it can tell new events from old recaps.',
     tested: '149 real events across 7 held-out windows (2024–2026)',
     metrics: [
@@ -55,7 +55,7 @@ export const detectors: DetectorInfo[] = [
     title: 'Delisting or listing notice',
     icon: '⇩',
     tone: 'amber',
-    what: 'Finds exchange deficiency notices (such as a share price below $1), delistings, voluntary delistings, exchange transfers and regained compliance. Pulls out the exchange, rule and cure deadline.',
+    what: 'Stock exchange warnings and delistings.',
     model: 'Three AI readers (RoBERTa-large ×2 + DeBERTa-v3) average their answers on the whole section.',
     tested: '477 real events across 4 held-out months, hand-checked where labelers disagreed',
     metrics: [
@@ -72,7 +72,7 @@ export const detectors: DetectorInfo[] = [
     title: 'Change of auditor',
     icon: '✎',
     tone: 'violet',
-    what: 'Finds when a company dismisses or loses its auditor or engages a new one, and flags any disagreement, reportable event or adverse audit opinion. Names the firms.',
+    what: 'Auditor dismissed, resigned or hired.',
     model: 'A RoBERTa-base reader plus a rule engine, combined: a flag counts if either one raises it.',
     tested: '348 filings across 5 held-out months',
     metrics: [
@@ -89,7 +89,7 @@ export const detectors: DetectorInfo[] = [
     title: 'Shareholder vote results',
     icon: '☑',
     tone: 'blue',
-    what: 'Finds what shareholders voted on: directors, auditor, pay, equity plans, mergers, reverse splits, proposals. Flags votes that failed and reads the vote-count tables.',
+    what: 'What shareholders voted on, and the result.',
     model: 'A RoBERTa-base reader plus a rule engine and a vote-table parser.',
     tested: '589 filings from two fresh months (June 2025, June 2026)',
     metrics: [
@@ -106,7 +106,7 @@ export const detectors: DetectorInfo[] = [
     title: 'CFO appointed or leaving',
     icon: '👔',
     tone: 'green',
-    what: 'Finds when a company names a new CFO (including interim or acting) or its CFO resigns, retires or is replaced. Names the person where the text allows.',
+    what: 'New CFO named, or CFO leaving.',
     model: 'Four RoBERTa-large readers, each trained on three of four hand-checked months, average their answers. Only sentences that mention a CFO title are read, and dates are converted to "days before filing".',
     tested: 'Month-by-month cross-validation: each model scored on a month it never saw (410 appointments, 356 departures)',
     metrics: [
@@ -124,7 +124,7 @@ export const detectors: DetectorInfo[] = [
     title: 'Acquisition or sale of assets completed',
     icon: '🤝',
     tone: 'blue',
-    what: 'Finds when a deal closes and tells you which way it went: the company bought something, sold something, or was itself acquired.',
+    what: 'A deal closed: bought, sold or acquired.',
     model: 'A RoBERTa-base reader spots the closing sentence. A RoBERTa-large reader decides the direction by reading the company name, the introduction and the section together, with the company\'s own name replaced by "FILER".',
     tested: 'Four dev months (394 filings) for "deal completed" and 305 filings with a known direction; plus 76 filings we labelled by hand from held-out months for the direction',
     metrics: [
@@ -143,7 +143,7 @@ export const detectors: DetectorInfo[] = [
     title: 'Material agreement entered or ended',
     icon: '📄',
     tone: 'violet',
-    what: 'Finds new material agreements (loans, mergers, supply deals) and agreements that end. Guesses the type, the counterparty and the amount.',
+    what: 'New or ended material agreements.',
     model: 'Two RoBERTa-large readers (different random seeds) read the whole filing at once and say which kinds of agreement were entered and which ended. The older sentence readers still pick the evidence sentence.',
     tested: '98 filings we labelled by hand from held-out months (50 of them from months never used for tuning); the older sentence-based version scored 0.926 / 0.800 on the same filings',
     metrics: [
@@ -161,7 +161,7 @@ export const detectors: DetectorInfo[] = [
     title: 'Unregistered sale of equity securities',
     icon: '📈',
     tone: 'amber',
-    what: 'Finds private placements and other unregistered share sales, the kind of security, and pulls out the proceeds, price and the legal exemption used.',
+    what: 'Private share sales and what was sold.',
     model: 'A RoBERTa-large reader of the whole filing (company, start of Item 3.02 and of Item 1.01) naming the security types and exemptions; text patterns pull out proceeds and price; the older sentence readers pick the evidence line.',
     tested: '57 filings we labelled by hand from held-out months (the earlier 0.98 scores were checked only against the model\'s own rule-made labels)',
     metrics: [
@@ -178,7 +178,7 @@ export const detectors: DetectorInfo[] = [
     title: 'Earnings guidance direction',
     icon: '📊',
     tone: 'blue',
-    what: 'Reads the earnings press release attached to an 8-K and says whether the company raised, lowered, reaffirmed or withdrew its outlook.',
+    what: 'Did the company raise or cut its outlook?',
     model: 'A RoBERTa-large reader on the first part of the press release (it sees about the first 400 words).',
     tested: '821 press releases from two held-out months (March and June 2025)',
     metrics: [
@@ -194,7 +194,7 @@ export const detectors: DetectorInfo[] = [
     title: 'Restructuring, exit costs or impairment',
     icon: '🏭',
     tone: 'red',
-    what: 'Classifies what kind of restructuring or impairment a company announced: layoffs, a closure, a divestiture, a discontinued product or a write-down. Shows the largest amount mentioned.',
+    what: 'Layoffs, closures, write-downs and sell-offs.',
     model: 'A RoBERTa-large reader on the whole Item text (the strongest of three seeds; averaging seeds did not help).',
     tested: '215 filings held out from 1,428, a random split rather than separate months',
     metrics: [
@@ -210,7 +210,7 @@ export const detectors: DetectorInfo[] = [
     title: 'Material cybersecurity incident',
     icon: '🔒',
     tone: 'red',
-    what: 'Reads a disclosed cybersecurity incident and judges whether the company has determined it is material, determined it is not material, or is still assessing.',
+    what: 'Is a cyber incident material to the company?',
     model: 'One RoBERTa-large reader on the whole Item 1.05 text. No ensemble: only 55 filings exist in the full history of this disclosure (mandatory since Dec 2023), too few to spare any for extra seeds.',
     tested: '5-fold cross-validation over all 55 filings (every one held out exactly once), not a single train/test split — too few examples for a holdout to mean anything on its own.',
     metrics: [

@@ -36,9 +36,8 @@ Each detector uses the best honestly-measured model found for that event type. "
 | **Search filings** | A live version of the SEC filing search: keywords, company, form type, date range and a "type of event" filter. Click any filing to analyze it, or press **Analyze all results** |
 | **Filing analysis** | Live progress with a countdown, then every event found across all detectors, how sure the AI is, how each reader voted, the evidence sentence, extracted details and a copyable JSON |
 | **My analyses / Analysis** | Background analyses of whole searches (no cap). Progress, an activity log, Stop and Resume, and the finished spreadsheet with CSV / Excel download. Results appear while it runs and stay available by link after the page is closed |
-| **How it works** | The five steps from a filing to a checkable answer, a real example, what makes it hard, and a glossary |
+| **Under the hood** | Drawings of the architecture, the steps for one filing, the 12 detectors, how the models were made, and the scores |
 | **Test results** | The scoreboard method, and the CEO detector's flagged and missed events from March 2025, searchable, with links to the SEC filing |
-| **Why these models** | How the best model was chosen (CEO detector as the example) and what did not help |
 | **Model notes** | Every model built and tested, with every metric from the project logs |
 
 A header button picks which Kaggle account's free GPU runs the model server, shows live start-up progress, and turns it off. The server stops by itself after 7 minutes without real use.

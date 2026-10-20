@@ -108,11 +108,8 @@ export default function Search() {
   return (
     <>
       <section className="hero compact">
-        <span className="eyebrow">Live · searches the SEC’s EDGAR database</span>
         <h1>Search SEC filings</h1>
-        <p className="lead">
-          Search the same public filings database as sec.gov. Click any filing and the AI will read it for every kind of event (leadership changes, bankruptcy, delisting, auditors, votes, deals, earnings and more) and pull out the details. Or analyze every result at once.
-        </p>
+        <p className="lead">Pick a filing to analyze it, or analyze every result at once.</p>
       </section>
 
       <form className="card sform" onSubmit={submit}>

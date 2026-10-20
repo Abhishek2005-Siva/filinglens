@@ -39,7 +39,7 @@ export function stepsFor(b: BootState): { label: string; detail: string; state: 
   const st = (done: boolean, active: boolean): StepState => (done ? 'done' : failed && active ? 'failed' : active ? 'active' : 'todo')
   return [
     { label: 'Asked Kaggle to start the server', detail: `on the ${b.account} account`, state: 'done' },
-    { label: 'Kaggle gives us a GPU', detail: running ? 'session is running' : 'waiting in Kaggle’s queue. Free GPUs are shared, so this can take from a few minutes to an hour or more', state: st(running, !running) },
+    { label: 'Kaggle gives us a GPU', detail: running ? 'session is running' : 'waiting in Kaggle’s queue (can take a while)', state: st(running, !running) },
     { label: 'Installing software and opening the public address', detail: b.tunnel === 'open' || b.serverUp ? 'public address is open' : 'about a minute', state: st(b.tunnel === 'open' || b.serverUp, running && b.tunnel !== 'open' && !b.serverUp) },
     { label: `Loading the ${total} AI models onto the GPUs`, detail: b.serverUp ? `${ready} of ${total} ready` : 'starts once the address is open', state: st(allReady, (b.tunnel === 'open' || b.serverUp) && !allReady) },
     { label: 'Ready to analyze filings', detail: allReady ? 'all models are on' : 'last step', state: allReady ? 'done' : 'todo' },
@@ -65,7 +65,7 @@ export default function StartProgress({ b, onRetry, onClose, onSwitch, switching
             {b.failure
               ? 'See the reason below.'
               : queued
-                ? `${fmtSecs(b.elapsed)} waiting in Kaggle’s queue for a free GPU (no countdown: Kaggle decides when)`
+                ? `${fmtSecs(b.elapsed)} waiting in Kaggle’s queue for a free GPU`
                 : `${fmtSecs(b.runningFor ?? 0)} since Kaggle gave us a GPU · ${left > 0 ? `about ${fmtSecs(left)} left` : 'taking a little longer than usual'}`}
           </small>
         </div>
@@ -106,8 +106,8 @@ export default function StartProgress({ b, onRetry, onClose, onSwitch, switching
       {slow && (
         <div className="explain warn">
           {queued
-            ? <>Kaggle’s queue is long right now. You can keep waiting (this page and the server start up on their own when a GPU frees up), or stop and try another account.</>
-            : <>This is taking much longer than usual. Kaggle says <b>{b.kaggle || 'unknown'}</b>. Open the Kaggle log to see where it is stuck, or start on a different account.</>}
+            ? <>Kaggle’s queue is long. Keep waiting, or try another account.</>
+            : <>Taking longer than usual. Kaggle says <b>{b.kaggle || 'unknown'}</b>. Open the Kaggle log to see where it is stuck, or start on a different account.</>}
           <div className="boot-actions"><a className="btn small" href={b.kaggleUrl} target="_blank" rel="noreferrer">Open the Kaggle log ↗</a></div>
         </div>
       )}

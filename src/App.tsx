@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import Overview from './pages/Overview'
-import HowItWorks from './pages/HowItWorks'
+import UnderTheHood from './pages/UnderTheHood'
 import Explorer from './pages/Explorer'
-import ModelLab from './pages/ModelLab'
 import Notes from './pages/Notes'
 import Search from './pages/Search'
 import Filing from './pages/Filing'
@@ -14,9 +13,8 @@ const pages = [
   { id: 'overview', label: 'Overview', el: Overview },
   { id: 'search', label: 'Search filings', el: Search },
   { id: 'analyses', label: 'My analyses', el: Analyses },
-  { id: 'how', label: 'How it works', el: HowItWorks },
+  { id: 'build', label: 'Under the hood', el: UnderTheHood },
   { id: 'results', label: 'Test results', el: Explorer },
-  { id: 'models', label: 'Why this model', el: ModelLab },
   { id: 'notes', label: 'Model notes', el: Notes },
 ] as const
 
@@ -28,6 +26,7 @@ const readRoute = (): Route => {
     return { page: 'filing', cik: parts[1], accession: parts[2] }
   }
   if (parts[0] === 'analysis' && /^[0-9a-f]{16}$/.test(parts[1] ?? '')) return { page: 'analysis', id: parts[1] }
+  if (parts[0] === 'how' || parts[0] === 'models') return { page: 'build' } // the old pages were folded into "Under the hood"
   return { page: pages.find((p) => p.id === parts[0])?.id ?? 'overview' }
 }
 
@@ -77,7 +76,7 @@ export default function App() {
       </main>
       <footer className="footer">
         <div className="container">
-          FilingLens reads public filings from the SEC’s EDGAR database. It is a research tool, not financial or legal advice. Accuracy figures come from held-out test months scored against answer keys built from a separate large AI model plus rules, with disagreements hand-checked for some detectors, so treat them as strong estimates rather than guarantees.
+          Reads public SEC filings. A research tool, not financial or legal advice. Scores are estimates from months the AI never saw.
         </div>
       </footer>
     </>

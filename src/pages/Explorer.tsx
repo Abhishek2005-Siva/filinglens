@@ -93,9 +93,7 @@ export default function Explorer() {
       <section className="hero compact">
         <span className="eyebrow">Real output · {march.period.label}</span>
         <h1>Test results</h1>
-        <p className="lead">
-          Every detector is graded on months it never saw while learning; the scoreboard for all of them is on the Overview. Below, the CEO detector (the most thoroughly tested) is shown event by event: everything it flagged, plus every real event it missed, so you can judge it yourself. Click a row to read the sentence from the filing.
-        </p>
+        <p className="lead">March 2025 CEO events from the earlier three-reader model: what it flagged and what it missed. Click a row to read the sentence.</p>
       </section>
 
       <div className="summary-chips">

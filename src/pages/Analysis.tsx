@@ -263,12 +263,12 @@ export default function Analysis({ id }: { id: string }) {
 
         {live && (
           <p className="explain good">
-            <b>You can close this page.</b> The analysis keeps running on the AI server. Open this same link (or “My analyses”) any time later and the finished results will be here. Link: <button type="button" className="linklike" onClick={() => void copy()}>{copied ? 'copied ✓' : 'copy link'}</button>
+            <b>You can close this page.</b> It keeps running. Come back to this link any time: <button type="button" className="linklike" onClick={() => void copy()}>{copied ? 'copied ✓' : 'copy link'}</button>
             {meta.live ? <span className="muted"> · live, updated {age <= 2 ? 'just now' : `${age}s ago`}</span> : <span className="muted"> · last news from the server {fmtSecs(age)} ago</span>}
           </p>
         )}
-        {meta.status === 'interrupted' && <p className="explain bad" role="alert">{meta.message || 'The model server stopped before this analysis finished.'} Everything finished so far is kept below. To continue: turn the AI model on (top right), then press Resume.</p>}
-        {meta.status === 'stopped' && <p className="explain warn">Stopped. The {meta.done.toLocaleString()} filings finished so far are below. Press Resume to do the rest.</p>}
+        {meta.status === 'interrupted' && <p className="explain bad" role="alert">The server stopped. What finished is kept below. Turn the AI on, then press Resume.</p>}
+        {meta.status === 'stopped' && <p className="explain warn">Stopped. {meta.done.toLocaleString()} done. Press Resume for the rest.</p>}
         {meta.status === 'error' && <p className="explain bad" role="alert">{meta.message || 'Something went wrong.'}</p>}
         {meta.status === 'done' && <p className="explain good">Finished{meta.errors ? `, but ${meta.errors} filing${meta.errors === 1 ? '' : 's'} could not be read (marked “Error” in the sheet)` : ''}. Download the sheet below.</p>}
         {err && <p className="explain bad" role="alert">{err}</p>}
@@ -291,7 +291,7 @@ export default function Analysis({ id }: { id: string }) {
         </div>
       </div>
 
-      {live && <p className="explain good">Results appear here as each filing finishes. {rows.length.toLocaleString()} {rows.length === 1 ? 'row is' : 'rows are'} in the sheet so far, and you can filter, sort or download it now.</p>}
+      {live && <p className="explain good">{rows.length.toLocaleString()} {rows.length === 1 ? 'row' : 'rows'} so far. You can download it now.</p>}
       {rows.length > 0 ? <ResultSheet rows={rows} fileBase={fileBase} about={about} /> : live && <p className="muted">Waiting for the first filings to finish…</p>}
     </section>
   )

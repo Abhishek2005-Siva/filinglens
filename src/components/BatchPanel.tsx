@@ -48,9 +48,7 @@ export default function BatchPanel({ filings, total, params, company }: Props) {
       <div className="batch-head">
         <div>
           <h2 id="h-batch">Analyze all results</h2>
-          <p className="muted small">
-            Runs every filing in these results through all of the AI detectors and builds a spreadsheet you can view on screen and download as CSV or Excel. It runs on the AI server, so you can close this page and come back later.
-          </p>
+          <p className="muted small">One spreadsheet for all results. It keeps running if you close the page.</p>
         </div>
         <button type="button" className="btn primary" onClick={() => void start()} disabled={busy || !filings.length}>
           {busy ? 'Starting…' : `Analyze ${count.toLocaleString()} filing${count === 1 ? '' : 's'}`}
@@ -64,7 +62,7 @@ export default function BatchPanel({ filings, total, params, company }: Props) {
           <label><input type="radio" name="scope" checked={scope === 'all'} onChange={() => setScope('all')} /> Everything this search found ({total.toLocaleString()} results)</label>
         </fieldset>
       )}
-      <p className="muted small">Takes roughly {mins(count)}. The AI model must be on first (top right).{mine ? <> <a href="#/analyses">My analyses ({mine})</a></> : null}</p>
+      <p className="muted small">About {mins(count)}. Turn the AI on first (top right).{mine ? <> <a href="#/analyses">My analyses ({mine})</a></> : null}</p>
       {error && <p className="explain bad" role="alert">{error}</p>}
     </section>
   )

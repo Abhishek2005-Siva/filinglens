@@ -132,16 +132,14 @@ function Result({ r }: { r: AnalysisResult }) {
 
       {r.skippedModel && (
         <p className="explain good">
-          <b>Instant answer:</b> {r.skippedModel} The AI readers were not needed for the CEO check.
+          <b>{r.skippedModel}</b>
         </p>
       )}
 
       {r.item502Found && !r.skippedModel && (
         <section>
           <h2>Everything the AI read for the CEO check</h2>
-          <p className="muted">
-            Each sentence of the leadership section, with the label every reader gave it. A vote only counts when the reader is at least 70% sure.
-          </p>
+          <p className="muted">Each sentence, and how the AI labeled it.</p>
           <div className="seg" role="group" aria-label="Which sentences">
             <button type="button" className={!showAll ? 'on' : ''} aria-pressed={!showAll} onClick={() => setShowAll(false)}>Flagged by any reader</button>
             <button type="button" className={showAll ? 'on' : ''} aria-pressed={showAll} onClick={() => setShowAll(true)}>All {r.sentences.length}</button>

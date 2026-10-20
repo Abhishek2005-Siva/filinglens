@@ -25,11 +25,8 @@ export default function Notes() {
     <>
       <section className="hero compact">
         <span className="eyebrow">Reference notes</span>
-        <h1>Every model built and tested, with every metric</h1>
-        <p className="lead">
-          Pulled directly from the project logs. P = precision, R = recall, F1 = the balance of both. All values are percentages unless shown as 0.xxx.
-          Tables scroll sideways on small screens.
-        </p>
+        <h1>Every model and metric</h1>
+        <p className="lead">P = how often alerts are right · R = how many real events are found · F1 = both in one number.</p>
       </section>
 
       <div className="notes-layout">
