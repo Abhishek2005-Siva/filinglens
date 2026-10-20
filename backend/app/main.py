@@ -255,20 +255,30 @@ def selftest() -> dict:
 
 
 def start_prewarm() -> None:
-    """After the snapshot restore, load the other detectors in the background so the first filing is not slowed."""
+    """Loads every detector in the background so the first filing is not slowed. Several are loaded at once: each load is mostly
+    reading weights and merging an adapter, so running a few side by side cuts the start-up time (PREWARM_WORKERS, default 3)."""
 
-    def go() -> None:
-        for fam in REGISTRY:
-            try:
-                fam.ensure_loaded()
-            except Exception:
-                pass  # recorded on the family (state "error") and shown in the status panel
+    def load_one(fam) -> None:
+        try:
+            fam.ensure_loaded()
+        except Exception:
+            pass  # recorded on the family (state "error") and shown in the status panel
+
+    def load_dates() -> None:
         try:
             from . import dates_model
 
             dates_model.tagger()  # the date reader for CEO / CFO changes loads with the others
         except Exception:
             pass
+
+    def go() -> None:
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=int(os.getenv("PREWARM_WORKERS", "3"))) as pool:
+            futures = [pool.submit(load_one, fam) for fam in REGISTRY] + [pool.submit(load_dates)]
+            for f in futures:
+                f.result()
         _activity["t"] = time.time()  # all detectors are ready: the idle clock starts now
 
     threading.Thread(target=go, daemon=True).start()
