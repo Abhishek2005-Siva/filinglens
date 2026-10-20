@@ -14,7 +14,7 @@ async function readJson(r: Response): Promise<{ body: any; hostError?: string; h
   // ngrok answers with its own error code when the tunnel is up but the model server behind it is not running.
   const ngrokCode = r.headers.get('ngrok-error-code') || ''
   if (ngrokCode) {
-    return { body: {}, hostKind: 'offline', hostCode: ngrokCode, hostError: 'The model server is not running right now. It starts on demand (on a free Kaggle GPU). Use “Turn on AI model” at the top, then wait about 12 minutes while it boots.' }
+    return { body: {}, hostKind: 'offline', hostCode: ngrokCode, hostError: 'The model server is not running right now. It starts on demand (on a free Kaggle GPU). Use “Turn on AI model” at the top, then wait. Once Kaggle gives it a GPU it takes 2–3 minutes; Kaggle’s queue can add more.' }
   }
   try {
     return { body: JSON.parse(text) }

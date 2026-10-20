@@ -19,6 +19,7 @@ export interface BootState {
   serverUp: boolean
   models: ModelStatus[] | null
   checkedAgo: number
+  runningFor: number | null // seconds since Kaggle gave us a GPU (null while still queued)
   events: BootEvent[]
   failure?: string
 }
@@ -36,8 +37,8 @@ export function stepsFor(b: BootState): { label: string; detail: string; state: 
   const st = (done: boolean, active: boolean): StepState => (done ? 'done' : failed && active ? 'failed' : active ? 'active' : 'todo')
   return [
     { label: 'Asked Kaggle to start the server', detail: `on the ${b.account} account`, state: 'done' },
-    { label: 'Kaggle gives us a GPU', detail: b.kaggle === 'QUEUED' ? 'waiting in Kaggle’s queue' : running ? 'session is running' : 'waiting for Kaggle', state: st(running, !running) },
-    { label: 'Installing software and opening the public address', detail: b.tunnel === 'open' || b.serverUp ? 'public address is open' : 'usually 4–8 minutes', state: st(b.tunnel === 'open' || b.serverUp, running && b.tunnel !== 'open' && !b.serverUp) },
+    { label: 'Kaggle gives us a GPU', detail: running ? 'session is running' : 'waiting in Kaggle’s queue. Free GPUs are shared, so this can take from a few minutes to an hour or more', state: st(running, !running) },
+    { label: 'Installing software and opening the public address', detail: b.tunnel === 'open' || b.serverUp ? 'public address is open' : 'about a minute', state: st(b.tunnel === 'open' || b.serverUp, running && b.tunnel !== 'open' && !b.serverUp) },
     { label: `Loading the ${total} AI models onto the GPUs`, detail: b.serverUp ? `${ready} of ${total} ready` : 'starts once the address is open', state: st(allReady, (b.tunnel === 'open' || b.serverUp) && !allReady) },
     { label: 'Ready to analyze filings', detail: allReady ? 'all models are on' : 'last step', state: allReady ? 'done' : 'todo' },
   ]
@@ -47,9 +48,10 @@ const ICON: Record<StepState, string> = { done: '✓', active: '…', todo: '', 
 
 export default function StartProgress({ b, onRetry, onClose, onSwitch, switching }: { b: BootState; onRetry: () => void; onClose: () => void; onSwitch?: () => void; switching?: boolean }) {
   const steps = stepsFor(b)
-  const left = Math.max(0, b.estimate - b.elapsed)
-  const slow = b.elapsed > b.estimate + 300 && !b.failure && !b.serverUp
-  const pct = Math.min(96, Math.round((steps.filter((s) => s.state === 'done').length / steps.length) * 80 + (b.models ? (b.models.filter((m) => m.state === 'ready').length / (b.models.length || 11)) * 20 : 0)))
+  const queued = b.runningFor === null && !b.serverUp
+  const left = Math.max(0, b.estimate - (b.runningFor ?? 0))
+  const slow = !b.failure && !b.serverUp && (queued ? b.elapsed > 45 * 60 : (b.runningFor ?? 0) > b.estimate + 300)
+  const pct = queued ? 6 : Math.min(96, Math.round((steps.filter((s) => s.state === 'done').length / steps.length) * 80 + (b.models ? (b.models.filter((m) => m.state === 'ready').length / (b.models.length || 11)) * 20 : 0)))
 
   return (
     <div className="mstatus bootpanel" role="dialog" aria-label="Server start-up progress" aria-live="polite">
@@ -57,7 +59,11 @@ export default function StartProgress({ b, onRetry, onClose, onSwitch, switching
         <div>
           <b>{b.failure ? 'The server did not start' : `Starting the server on ${b.account}`}</b>
           <small className="muted block">
-            {b.failure ? 'See the reason below.' : `${fmtSecs(b.elapsed)} elapsed · ${left > 0 ? `about ${fmtSecs(left)} left` : 'taking a little longer than usual'}`}
+            {b.failure
+              ? 'See the reason below.'
+              : queued
+                ? `${fmtSecs(b.elapsed)} waiting in Kaggle’s queue for a free GPU (no countdown: Kaggle decides when)`
+                : `${fmtSecs(b.runningFor ?? 0)} since Kaggle gave us a GPU · ${left > 0 ? `about ${fmtSecs(left)} left` : 'taking a little longer than usual'}`}
           </small>
         </div>
         <button type="button" className="icon-btn" onClick={onClose} aria-label="Hide progress">×</button>
@@ -96,7 +102,9 @@ export default function StartProgress({ b, onRetry, onClose, onSwitch, switching
       )}
       {slow && (
         <div className="explain warn">
-          This is taking much longer than usual. Kaggle says <b>{b.kaggle || 'unknown'}</b>. Open the Kaggle log to see where it is stuck, or start on a different account.
+          {queued
+            ? <>Kaggle’s queue is long right now. You can keep waiting (this page and the server start up on their own when a GPU frees up), or stop and try another account.</>
+            : <>This is taking much longer than usual. Kaggle says <b>{b.kaggle || 'unknown'}</b>. Open the Kaggle log to see where it is stuck, or start on a different account.</>}
           <div className="boot-actions"><a className="btn small" href={b.kaggleUrl} target="_blank" rel="noreferrer">Open the Kaggle log ↗</a></div>
         </div>
       )}

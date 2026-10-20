@@ -244,7 +244,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       try {
         const r = await pushKernel(def, runHours, info.extras)
         if (r.error) throw new KaggleError(400, r.error)
-        return res.status(200).json({ ok: true, account: wanted, runHours, url: r.url, remainingHours: info.remainingHours, skipped: [], bootMinutes: 12 })
+        return res.status(200).json({ ok: true, account: wanted, runHours, url: r.url, remainingHours: info.remainingHours, skipped: [], bootMinutes: 3 })
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'failed'
         const friendly = /Maximum batch GPU session count/i.test(msg)

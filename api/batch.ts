@@ -193,7 +193,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!r.ok) {
         await writeBlob(key(id, 'meta.json'), { ...meta, status: 'error', message: 'The model server did not accept this analysis.' })
         const old = r.status === 404 || r.status === 405
-        return res.status(503).json({ error: r.offline ? 'model_offline' : 'model_unavailable', message: old ? 'The running AI server is an older version that cannot do background analyses. Press “Turn off”, then turn it on again (about 12 minutes) to get the new version.' : r.body?.detail || 'The model server did not accept the analysis. Try again in a moment.' })
+        return res.status(503).json({ error: r.offline ? 'model_offline' : 'model_unavailable', message: old ? 'The running AI server is an older version that cannot do background analyses. Press “Turn off”, then turn it on again to get the new version.' : r.body?.detail || 'The model server did not accept the analysis. Try again in a moment.' })
       }
       return res.status(200).json({ id })
     }

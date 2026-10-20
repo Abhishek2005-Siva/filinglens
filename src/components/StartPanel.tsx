@@ -111,7 +111,7 @@ export default function StartPanel({ onClose, onStarted, onAlreadyRunning }: Pro
                 </select>
               </label>
               <button type="button" className="btn primary" onClick={() => void start()} disabled={busy || !pick}>{busy ? 'Starting…' : 'Start server'}</button>
-              <small className="muted">It also stops by itself after 7 minutes with no use. Booting takes about 12 minutes.</small>
+              <small className="muted">It also stops by itself after 7 minutes with no use. Once Kaggle gives it a GPU it takes about 2–3 minutes. Kaggle sometimes makes you wait in its queue first, from a few minutes to an hour or more.</small>
             </div>
           )}
         </>

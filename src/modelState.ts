@@ -60,9 +60,9 @@ export const recordCold = (seconds: number) => {
   } catch { /* storage unavailable */ }
 }
 
-// Starting through Kaggle takes much longer (about 12 minutes) than waking a sleeping host, so track it separately.
-const BOOT_KEY = 'modelBootSeconds'
-const DEFAULT_BOOT = 720
+// Booting on Kaggle: the time from "Kaggle gave us a GPU" to "all models ready" (about 2 minutes). Waiting in Kaggle's queue is separate and has no estimate.
+const BOOT_KEY = 'modelBootSeconds2'
+const DEFAULT_BOOT = 150
 let startingEstimate: number | null = null
 export const setStartingEstimate = (s: number | null) => { startingEstimate = s }
 export const getStartingEstimate = () => startingEstimate
@@ -70,7 +70,7 @@ export const getStartingEstimate = () => startingEstimate
 export const bootEstimate = (): number => {
   try {
     const n = Number(localStorage.getItem(BOOT_KEY))
-    return n >= 120 && n <= 3600 ? n : DEFAULT_BOOT
+    return n >= 60 && n <= 1800 ? n : DEFAULT_BOOT
   } catch {
     return DEFAULT_BOOT
   }

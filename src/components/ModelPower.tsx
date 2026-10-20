@@ -82,13 +82,31 @@ export default function ModelPower() {
     return () => window.clearInterval(id)
   }, [])
 
+  // A start that is already under way (begun here earlier, in another tab, or by someone else) is followed, not restarted:
+  // this only attaches to a server Kaggle already has queued or running. It never starts one.
+  useEffect(() => {
+    if (DEMO) return
+    let gone = false
+    hostCall<{ running: string | null }>('status')
+      .then(async (d) => {
+        if (gone || !d.running || live.current) return
+        const h = await modelHealth().catch(() => null)
+        if (gone || live.current || !h || h.ok) return // already reachable: the status check above handles that
+        void watch(d.running, bootEstimate())
+      })
+      .catch(() => undefined)
+    return () => { gone = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // While starting, refresh the tracker's clocks every second.
   useEffect(() => {
     if (state !== 'starting') return
     const id = window.setInterval(() => {
       const l = live.current
       if (!l) return
-      setBoot({ ...l, elapsed: Math.round((performance.now() - l.t0) / 1000), checkedAgo: Math.round((Date.now() - l.checkedAt) / 1000) })
+      const since = (Date.now() - l.checkedAt) / 1000
+      setBoot({ ...l, runningFor: l.runningFor === null ? null : Math.round(l.runningFor + since), elapsed: Math.round((performance.now() - l.t0) / 1000), checkedAgo: Math.round(since) })
     }, 1000)
     return () => window.clearInterval(id)
   }, [state])
@@ -162,23 +180,38 @@ export default function ModelPower() {
     let models: BootState['models'] = null
     let failure = ''
     let lastReady = -1
+    let runningAt: number | null = null // seconds into the wait when Kaggle gave us a GPU
     const publish = () => {
-      live.current = { account, estimate, kaggle, kaggleUrl, tunnel, serverUp, models, events: [...events], failure: failure || undefined, t0, checkedAt: Date.now() }
+      const runningFor = runningAt === null ? null : at() - runningAt
+      live.current = { account, estimate, kaggle, kaggleUrl, tunnel, serverUp, models, events: [...events], failure: failure || undefined, runningFor, t0, checkedAt: Date.now() }
       setBoot({ ...live.current, elapsed: at(), checkedAgo: 0 })
     }
     log(`Asked Kaggle to start the server on ${account}`)
     publish()
 
-    const maxTries = Math.ceil((estimate * 2.5) / 3)
-    for (let i = 0; i < maxTries && alive(); i++) {
-      // 1) what does Kaggle say about the run?
-      if (i % 2 === 0) {
+    // Waiting in Kaggle's queue has no fixed length, so there is no timeout while it is queued (only a very long cap).
+    // The countdown and the "did not come up" check only start once Kaggle says the run is RUNNING.
+    for (let i = 0; alive(); i++) {
+      if (at() > 4 * 3600) {
+        failure = 'Kaggle has not given a GPU in 4 hours. Stop this and try another account, or try again later.'
+        log(failure, 'bad')
+        break
+      }
+      if (runningAt !== null && !serverUp && at() - runningAt > 20 * 60) {
+        failure = 'Kaggle started the run over 20 minutes ago but the server has not appeared. Open the Kaggle log to see where it is stuck.'
+        log(failure, 'bad')
+        break
+      }
+      const queuedNow = runningAt === null
+      // 1) what does Kaggle say about the run? (every check while booting; every other check while queued)
+      if (!queuedNow || i % 2 === 0) {
         try {
           const p = await hostCall<BootProgress>('progress', { account })
           kaggleUrl = p.kaggleUrl
           if (p.status !== kaggle) {
             log(`Kaggle: ${KAGGLE_LABEL[p.status] ?? p.status.toLowerCase()}`, p.status === 'ERROR' ? 'bad' : p.status === 'RUNNING' ? 'good' : undefined)
             kaggle = p.status
+            if (p.status === 'RUNNING' && runningAt === null) runningAt = at()
           }
           if (finished(kaggle) && !serverUp) {
             failure = p.failureMessage || `Kaggle ended the run (${kaggle.toLowerCase()}) before the server came up.`
@@ -211,7 +244,7 @@ export default function ModelPower() {
           bad.forEach((m) => { if (!events.some((e) => e.text.startsWith(m.title))) log(`${m.title} failed to load: ${m.error ?? 'unknown error'}`, 'bad') })
           const settled = !!models && models.every((m) => m.state === 'ready' || m.state === 'error')
           if (h.ok && settled) {
-            recordBoot(at())
+            recordBoot(runningAt === null ? at() : at() - runningAt)
             if (models) setSum(summarize(models))
             log(bad.length ? `Ready, but ${bad.length} model${bad.length === 1 ? '' : 's'} failed to load` : 'Ready: all models are on', bad.length ? 'warn' : 'good')
             publish()
@@ -230,11 +263,11 @@ export default function ModelPower() {
         }
       }
       publish()
-      await new Promise((r) => setTimeout(r, 3000))
+      await new Promise((r) => setTimeout(r, runningAt === null ? 8000 : 3000)) // queued: no need to ask every few seconds
     }
     if (!alive()) return
     if (!failure) {
-      failure = 'The server did not come up in time. Kaggle may still be installing it. Open the Kaggle log to see.'
+      failure = 'The server did not come up. Open the Kaggle log to see why.'
       log(failure, 'bad')
     }
     publish()
@@ -309,11 +342,12 @@ export default function ModelPower() {
   if (state === 'starting') {
     const e = boot?.elapsed ?? 0
     const est = boot?.estimate ?? bootEstimate()
+    const inQueue = !!boot && boot.runningFor === null && !boot.serverUp
     return (
       <div className="power-wrap">
         <button type="button" className="power starting btn-like" onClick={() => boot && setBootOpen((v) => !v)} aria-expanded={bootOpen} aria-haspopup="dialog">
           <span className="power-dot" /> Starting{boot ? ` on ${boot.account}` : ' the model'}… {fmtSecs(e)}
-          <small>{boot ? `${e < est ? `about ${fmtSecs(est - e)} left` : 'almost there…'} · ${bootOpen ? 'hide' : 'live progress'} ▾` : 'please wait'}</small>
+          <small>{boot ? `${inQueue ? 'waiting in Kaggle’s queue' : (boot.runningFor ?? 0) < est ? `about ${fmtSecs(est - (boot.runningFor ?? 0))} left` : 'almost there…'} · ${bootOpen ? 'hide' : 'live progress'} ▾` : 'please wait'}</small>
         </button>
         {progressPanel}
       </div>
