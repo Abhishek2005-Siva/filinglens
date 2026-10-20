@@ -41,6 +41,7 @@ interface AccountInfo {
   main: boolean
   configured: boolean
   adaptersReady: boolean
+  authFailed?: boolean // Kaggle rejected this account's token (expired or revoked)
   extras: string[] // optional datasets that are ready on this account
   usedHours: number
   reservedHours: number
@@ -77,6 +78,12 @@ async function inspect(a: AccountDef): Promise<AccountInfo> {
     out.error = `Could not read the GPU quota: ${quota.reason?.message ?? 'unknown error'}`
   }
   out.adaptersReady = ds.status === 'fulfilled' && ds.value.status === 'READY'
+  // a rejected token makes every Kaggle call fail the same way; say so instead of blaming the model files
+  const denied = [quota, ds, ker].some((r) => r.status === 'rejected' && (/unauthenticated/i.test(String(r.reason?.message)) || r.reason?.status === 401 || r.reason?.status === 'UNAUTHENTICATED'))
+  if (denied) {
+    out.authFailed = true
+    out.error = 'Kaggle rejected this account’s token (it has probably expired).'
+  }
   out.extras = EXTRA_DATASETS.filter((_, i) => ex[i]?.status === 'fulfilled' && (ex[i] as PromiseFulfilledResult<{ status?: string }>).value.status === 'READY')
   if (ker.status === 'fulfilled') {
     // An empty answer means the first state of the enum, QUEUED (proto3 leaves the default value out): the run is waiting for a free GPU.
@@ -188,7 +195,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         accounts: infos.filter((i) => i.configured && (eligible(i) || i.kernel === 'RUNNING' || i.kernel === 'QUEUED')),
         hidden: infos
           .filter((i) => !(i.configured && (eligible(i) || i.kernel === 'RUNNING' || i.kernel === 'QUEUED')))
-          .map((i) => ({ id: i.id, label: i.label, reason: !i.configured ? 'not configured' : !i.adaptersReady ? 'model files not uploaded to this account yet' : i.remainingHours < MIN_HOURS ? 'out of GPU hours' : 'unavailable', remainingHours: i.remainingHours, refreshTime: i.refreshTime })),
+          .map((i) => ({ id: i.id, label: i.label, reason: !i.configured ? 'not configured' : i.authFailed ? 'its Kaggle token was rejected (probably expired): make a new token on Kaggle and update it on the site' : !i.adaptersReady ? 'model files not uploaded to this account yet' : i.remainingHours < MIN_HOURS ? 'out of GPU hours' : 'unavailable', remainingHours: i.remainingHours, refreshTime: i.refreshTime })),
         running: infos.find((i) => i.kernel === 'RUNNING' || i.kernel === 'QUEUED')?.id ?? null,
         defaultAccount: ACCOUNTS.find((a) => a.main)?.id ?? ACCOUNTS[0].id,
       })
@@ -231,7 +238,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const def = ACCOUNTS.find((a) => a.id === wanted)
       if (!info || !def) return res.status(400).json({ error: 'bad_request', message: 'Unknown account.' })
       if (!eligible(info)) {
-        const why = !info.configured ? 'it has no Kaggle token set up on the site' : !info.adaptersReady ? 'the model files are not uploaded to it yet' : info.kernel === 'RUNNING' || info.kernel === 'QUEUED' ? 'a server is already running on it' : 'it is out of GPU hours'
+        const why = !info.configured ? 'it has no Kaggle token set up on the site' : info.authFailed ? 'its Kaggle token was rejected (probably expired)' : !info.adaptersReady ? 'the model files are not uploaded to it yet' : info.kernel === 'RUNNING' || info.kernel === 'QUEUED' ? 'a server is already running on it' : 'it is out of GPU hours'
         return res.status(409).json({ error: 'account_unavailable', message: `${info.label} cannot start the server right now: ${why}. Pick another account.`, account: wanted })
       }
       const runHours = Math.max(1, Math.min(Number(body.runHours) || DEFAULT_RUN_HOURS, Math.floor(info.remainingHours - 0.25)))
