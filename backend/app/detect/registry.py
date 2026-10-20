@@ -3,13 +3,15 @@ from typing import Callable, List, Optional
 
 from .families import Auditor, Bankruptcy, Delisting, Family, Votes
 from .agree_doc import AgreementsV2
-from .families2 import CFO, Acquisition, Equity, Guidance, Restructuring
+from .equity_doc import EquityV2
+from .families2 import CFO, Acquisition, Guidance, Restructuring
 from .item105 import CyberIncident
 
 REGISTRY: List[Family] = [
     # AgreementsV2 reads the whole filing with two RoBERTa-large readers when the `filinglens-agree` adapters are mounted
-    # (AGREE_DIR); without them it behaves exactly like the old sentence-based Agreements detector.
-    Bankruptcy(), Delisting(), Auditor(), Votes(), CFO(), Acquisition(), AgreementsV2(), Equity(), Guidance(), Restructuring(),
+    # (AGREE_DIR); without them it behaves exactly like the old sentence-based Agreements detector. EquityV2 does the same for
+    # Item 3.02 with the `filinglens-equity` adapter (EQUITY_DIR).
+    Bankruptcy(), Delisting(), Auditor(), Votes(), CFO(), Acquisition(), AgreementsV2(), EquityV2(), Guidance(), Restructuring(),
     CyberIncident(),
 ]
 

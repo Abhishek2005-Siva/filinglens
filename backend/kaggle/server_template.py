@@ -53,6 +53,11 @@ agree_hit = glob.glob("/kaggle/input/**/agree_doc_s42/adapter_config.json", recu
 if agree_hit:
     os.environ["AGREE_DIR"] = os.path.dirname(os.path.dirname(agree_hit[0]))
 print("agreements filing reader:", os.environ.get("AGREE_DIR", "not found (sentence readers only)"), flush=True)
+# optional: the filing-level Item 3.02 reader (folder equity_doc_s42/ of the small `filinglens-equity` dataset)
+equity_hit = glob.glob("/kaggle/input/**/equity_doc_s42/adapter_config.json", recursive=True)
+if equity_hit:
+    os.environ["EQUITY_DIR"] = os.path.dirname(os.path.dirname(equity_hit[0]))
+print("equity (3.02) filing reader:", os.environ.get("EQUITY_DIR", "not found (sentence readers only)"), flush=True)
 # optional: the Item 1.05 (cybersecurity incident) materiality classifier. Kaggle mounts the small
 # `filinglens-item105` dataset with the adapter files at its root, same shape as filinglens-dates.
 item105_hit = glob.glob("/kaggle/input/**/filinglens-item105/adapter_config.json", recursive=True)
