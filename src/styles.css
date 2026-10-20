@@ -524,3 +524,4 @@ td.empty { text-align: center; }
 .hero-points b { color: var(--text); }
 .power-queued { display: inline-flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: .84rem; color: var(--amber); background: var(--amber-soft); padding: 7px 14px; border-radius: 999px; font-weight: 600; }
 .power-queued .linklike { font-size: .82rem; }
+.sound-line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 10px 0 4px; font-size: .88rem; }

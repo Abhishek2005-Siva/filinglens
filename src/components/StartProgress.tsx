@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { fmtSecs } from '../hooks'
+import { playChime, setSoundEnabled, soundEnabled } from '../sound'
 import type { ModelStatus } from '../types'
 
 export type Tunnel = 'unknown' | 'closed' | 'open'
@@ -48,6 +50,7 @@ const ICON: Record<StepState, string> = { done: '✓', active: '…', todo: '', 
 
 export default function StartProgress({ b, onRetry, onClose, onSwitch, switching }: { b: BootState; onRetry: () => void; onClose: () => void; onSwitch?: () => void; switching?: boolean }) {
   const steps = stepsFor(b)
+  const [sound, setSound] = useState(soundEnabled)
   const queued = b.runningFor === null && !b.serverUp
   const left = Math.max(0, b.estimate - (b.runningFor ?? 0))
   const slow = !b.failure && !b.serverUp && (queued ? b.elapsed > 45 * 60 : (b.runningFor ?? 0) > b.estimate + 300)
@@ -113,6 +116,16 @@ export default function StartProgress({ b, onRetry, onClose, onSwitch, switching
         <div className="boot-actions">
           <button type="button" className="btn small" onClick={onSwitch} disabled={switching}>{switching ? 'Stopping…' : 'Stop this and use a different account'}</button>
         </div>
+      )}
+
+      {!b.failure && !b.serverUp && (
+        <p className="sound-line">
+          <label className="check-line">
+            <input type="checkbox" checked={sound} onChange={(e) => { setSound(e.target.checked); setSoundEnabled(e.target.checked); if (e.target.checked) playChime(true) }} />
+            <span>Play a sound when the server is ready</span>
+          </label>
+          <button type="button" className="linklike" onClick={() => playChime(true)}>test sound</button>
+        </p>
       )}
 
       <div className="bfoot">

@@ -4,6 +4,7 @@ import { clearStarting, bootEstimate, getStartingAt, markOff, markReady, markSta
 import { fmtSecs } from '../hooks'
 import { hostCall, type BootProgress, type StartResult, type StopResult } from '../host'
 import ModelStatusPanel, { DEMO, DEMO_MODELS, summarize } from './ModelStatusPanel'
+import { announceReady, unlockAudio } from '../sound'
 import StartPanel from './StartPanel'
 import StartProgress, { finished, type BootEvent, type BootState, type Tunnel } from './StartProgress'
 
@@ -97,6 +98,17 @@ export default function ModelPower() {
       .catch(() => undefined)
     return () => { gone = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Sound can only play once the person has touched the page, so any click or key press unlocks it for later.
+  useEffect(() => {
+    const unlock = () => unlockAudio()
+    window.addEventListener('pointerdown', unlock)
+    window.addEventListener('keydown', unlock)
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
   }, [])
 
   // While starting, refresh the tracker's clocks every second.
@@ -251,6 +263,7 @@ export default function ModelPower() {
             setStartingEstimate(null)
             markReady()
             setState('on')
+            announceReady()
             window.setTimeout(() => { if (run.current === me) setBootOpen(false) }, 4000)
             return
           }
