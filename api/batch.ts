@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { get, put } from '@vercel/blob'
 import { one } from './_sec.js'
+import { modelUrl, tunnelDown } from './_model.js'
 
 // Background analyses. The model server does the work and hands the answers to this function in small parts; they are
 // stored in a private Blob store, so a person can close the page and open the same link later.
@@ -9,7 +10,6 @@ import { one } from './_sec.js'
 //   POST {action:'stop' | 'resume', id}
 //   POST {action:'save', id, patch?, part?}           model server only (needs the API key)
 //   GET  ?id=<id>                                     progress          GET ?id=<id>&part=<n>   one stored part
-const SPACE = (process.env.MODEL_URL || '').replace(/\/$/, '')
 const TOKEN = process.env.MODEL_API_KEY || ''
 const ID = /^[0-9a-f]{16}$/
 const LIVE = ['queued', 'collecting', 'running']
@@ -45,6 +45,7 @@ const writeBlob = (pathname: string, data: unknown) =>
 
 /** Calls the model server. `offline` means nothing is listening (it is switched off or still booting). */
 async function model(path: string, init: RequestInit = {}, ms = 15000): Promise<{ ok: boolean; offline: boolean; status: number; body: any }> {
+  const SPACE = await modelUrl()
   if (!SPACE) return { ok: false, offline: true, status: 503, body: {} }
   try {
     const r = await fetch(`${SPACE}${path}`, {
@@ -52,7 +53,7 @@ async function model(path: string, init: RequestInit = {}, ms = 15000): Promise<
       headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' },
       signal: AbortSignal.timeout(ms),
     })
-    if (r.headers.get('ngrok-error-code')) return { ok: false, offline: true, status: 503, body: {} }
+    if (tunnelDown(r)) return { ok: false, offline: true, status: 503, body: {} }
     const body = await r.json().catch(() => ({}))
     return { ok: r.ok, offline: false, status: r.status, body }
   } catch {

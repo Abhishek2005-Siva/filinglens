@@ -1,11 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { one } from './_sec.js'
+import { modelUrl, tunnelDown } from './_model.js'
 
 // Thin, authenticated proxy to the private model service (hosted on Modal).
 // POST  {cik, accession}  -> {id}        start analysing a filing
 // GET   ?job=<id>         -> job status/result
 // GET   ?health=1         -> model readiness
-const SPACE = (process.env.MODEL_URL || '').replace(/\/$/, '')
 const TOKEN = process.env.MODEL_API_KEY || ''
 
 // Modal answers with plain text ("modal-http: workspace ... is disabled") when the host refuses to run the app.
@@ -13,8 +13,8 @@ async function readJson(r: Response): Promise<{ body: any; hostError?: string; h
   const text = await r.text()
   // ngrok answers with its own error code when the tunnel is up but the model server behind it is not running.
   const ngrokCode = r.headers.get('ngrok-error-code') || ''
-  if (ngrokCode) {
-    return { body: {}, hostKind: 'offline', hostCode: ngrokCode, hostError: 'The model server is not running right now. It starts on demand (on a free Kaggle GPU). Use “Turn on AI model” at the top, then wait. Once Kaggle gives it a GPU it takes 2–3 minutes; Kaggle’s queue can add more.' }
+  if (tunnelDown(r)) {
+    return { body: {}, hostKind: 'offline', hostCode: ngrokCode || undefined, hostError: 'The model server is not running right now. It starts on demand (on a free Kaggle GPU). Use “Turn on AI model” at the top, then wait. Once Kaggle gives it a GPU it takes 2–3 minutes; Kaggle’s queue can add more.' }
   }
   try {
     return { body: JSON.parse(text) }
@@ -31,6 +31,8 @@ async function readJson(r: Response): Promise<{ body: any; hostError?: string; h
 }
 
 async function call(path: string, init?: RequestInit) {
+  const SPACE = await modelUrl()
+  if (!SPACE) throw new Error('no model address registered yet')
   return fetch(`${SPACE}${path}`, {
     ...init,
     headers: { ...(init?.headers || {}), Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' },
@@ -39,9 +41,6 @@ async function call(path: string, init?: RequestInit) {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store')
-  if (!SPACE) {
-    return res.status(503).json({ error: 'not_configured', message: 'The model backend is not connected yet.' })
-  }
   try {
     if (req.method === 'POST' && (req.body ?? {}).selftest) {
       // Runs every model once on the server; loads any that are not loaded yet, so it can take a while.

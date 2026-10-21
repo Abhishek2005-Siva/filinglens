@@ -28,6 +28,7 @@ os.environ["API_KEY"] = "__API_KEY__"
 os.environ["SEC_USER_AGENT"] = "__SEC_UA__"
 NGROK_TOKEN = "__NGROK_TOKEN__"
 NGROK_DOMAIN = "__NGROK_DOMAIN__"
+SITE_URL = "__SITE_URL__"  # the website; the server tells it which public address it got
 RUN_HOURS = float("__RUN_HOURS__")
 IDLE_MINUTES = float("__IDLE_MINUTES__")  # stop early when nobody has used the server for this long (saves GPU quota)
 
@@ -148,9 +149,78 @@ def open_tunnel(port: int, domain: str, token: str, wait: float = 60.0):
     return proc, None
 
 
+# ---- public address, first choice: a free Cloudflare quick tunnel (no monthly request cap, unlike ngrok's free plan). Its address is new
+# every time, so the server registers it with the website. ngrok below is the fallback.
+CF_BIN = "/kaggle/working/cloudflared"
+
+
+def open_cloudflare(port: int, wait: float = 90.0):
+    import urllib.request
+
+    if not os.path.exists(CF_BIN):
+        data = urllib.request.urlopen("https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64", timeout=120).read()
+        open(CF_BIN, "wb").write(data)
+        os.chmod(CF_BIN, 0o755)
+    proc = subprocess.Popen([CF_BIN, "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{port}"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    found: list = []
+    tail: list = []
+
+    def drain() -> None:
+        for line in proc.stdout:
+            tail.append(line.rstrip())
+            del tail[:-30]
+            m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line)
+            if m and not found:
+                found.append(m.group(0))
+
+    threading.Thread(target=drain, daemon=True).start()
+    end = time.time() + wait
+    while time.time() < end and proc.poll() is None and not found:
+        time.sleep(1.0)
+    if found:
+        return proc, found[0]
+    if proc.poll() is None:
+        proc.kill()
+    for line in tail[-8:]:
+        stamp("cloudflared: " + line[:200])
+    return proc, None
+
+
+def register(url: str) -> bool:
+    import urllib.request
+
+    for attempt in range(6):
+        try:
+            req = urllib.request.Request(f"{SITE_URL}/api/host", data=json.dumps({"action": "register", "url": url}).encode(), method="POST",
+                                         headers={"Authorization": f"Bearer {os.environ['API_KEY']}", "Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=20).read()
+            return True
+        except Exception as exc:
+            stamp(f"could not register the address with the website ({type(exc).__name__}: {exc}); retrying")
+            time.sleep(5)
+    return False
+
+
 tunnel_proc, public_url, t_wait = None, None, time.time()
-fetch_ngrok()
-stamp("ngrok agent ready")
+try:
+    for attempt in range(3):
+        tunnel_proc, public_url = open_cloudflare(7860)
+        if public_url:
+            if register(public_url):
+                stamp("registered the Cloudflare address with the website")
+            else:
+                stamp("the website did not accept the address; falling back to ngrok")
+                tunnel_proc.kill()
+                public_url = None
+            break
+        stamp("cloudflare tunnel did not open; retrying")
+except Exception as exc:
+    stamp(f"cloudflare tunnel failed ({type(exc).__name__}: {exc}); falling back to ngrok")
+    public_url = None
+
+if public_url is None:
+    fetch_ngrok()
+    stamp("ngrok agent ready")
 while public_url is None:
     tunnel_proc, public_url = open_tunnel(7860, NGROK_DOMAIN, NGROK_TOKEN)
     if public_url is None:

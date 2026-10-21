@@ -4,6 +4,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { strToU8, zipSync } from 'fflate'
 import { ACCOUNTS, DATASET_SLUG, EXTRA_DATASETS, KERNEL_SLUG, type AccountDef } from './_accounts.js'
 import { datasetsApi, kaggle, KaggleError, kernelsApi, seconds } from './_kaggle.js'
+import { modelUrl, setModelUrl, tunnelDown } from './_model.js'
 
 // Control of where the model server runs (which Kaggle account's GPU) and when it is on. Open to every visitor of the site.
 //   POST {action:'accounts'}                         -> GPU hours left per account (exhausted accounts are reported separately)
@@ -119,6 +120,7 @@ function buildScript(runHours: number): string {
     __SEC_UA__: need('SEC_USER_AGENT'),
     __NGROK_TOKEN__: need('NGROK_AUTHTOKEN'),
     __NGROK_DOMAIN__: need('NGROK_DOMAIN'),
+    __SITE_URL__: process.env.SITE_URL || 'https://ui-ebon-theta.vercel.app',
     __RUN_HOURS__: String(runHours),
     __IDLE_MINUTES__: String(IDLE_MINUTES),
   }
@@ -151,7 +153,7 @@ async function pushKernel(a: AccountDef, runHours: number, extras: string[] = []
 async function stopRunning(infos: AccountInfo[], only?: string) {
   const stopped: string[] = []
   const targets = infos.filter((i) => i.kernel !== 'NONE' && (!only || i.id === only))
-  const url = (process.env.MODEL_URL || '').replace(/\/$/, '')
+  const url = await modelUrl()
   if (url && targets.length) {
     // Ask the server to stop itself first (newer versions understand this); deleting the kernel below ends it either way.
     const r = await fetch(`${url}/shutdown`, { method: 'POST', headers: { Authorization: `Bearer ${process.env.MODEL_API_KEY || ''}`, 'ngrok-skip-browser-warning': '1', 'Content-Type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(6000) })
@@ -188,6 +190,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ account: def.id, status: 'NONE', kaggleUrl: `https://www.kaggle.com/code/${def.id}/${KERNEL_SLUG}` })
       }
     }
+    if (body.action === 'register') {
+      // the model server announces its public address when it starts (it proves itself with the shared API key)
+      const key = process.env.MODEL_API_KEY || ''
+      if (!key || String(req.headers.authorization || '') !== `Bearer ${key}`) return res.status(401).json({ error: 'unauthorized' })
+      const url = String((body as { url?: string }).url || '').replace(/\/$/, '')
+      if (!/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.(trycloudflare\.com|ngrok-free\.dev|ngrok-free\.app|ngrok\.app)$/.test(url)) return res.status(400).json({ error: 'bad_request', message: 'Not an accepted tunnel address.' })
+      await setModelUrl(url)
+      return res.status(200).json({ ok: true })
+    }
     const infos = await Promise.all(ACCOUNTS.map(inspect))
 
     if (body.action === 'accounts' || body.action === 'status') {
@@ -207,10 +218,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (body.action === 'stop') {
-      const url = (process.env.MODEL_URL || '').replace(/\/$/, '')
+      const url = await modelUrl()
       const ask = (path: string, payload: unknown) =>
         fetch(`${url}${path}`, { method: 'POST', headers: { Authorization: `Bearer ${process.env.MODEL_API_KEY || ''}`, 'ngrok-skip-browser-warning': '1', 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(8000) })
-          .then(async (r) => (r.ok && !r.headers.get('ngrok-error-code') ? ((await r.json().catch(() => ({}))) as Record<string, unknown>) : null))
+          .then(async (r) => (r.ok && !tunnelDown(r) ? ((await r.json().catch(() => ({}))) as Record<string, unknown>) : null))
           .catch(() => null)
       if (body.cancel) {
         // take back a turn-off that was waiting for an analysis to finish
