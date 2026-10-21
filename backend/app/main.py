@@ -149,7 +149,7 @@ def _run(job: dict, cik: str, accession: str, cache: bool = True) -> None:
                 def on_progress(done: int, total: int, reader_idx: int) -> None:
                     _set(job, unitsDone=done, readersDone=reader_idx, progress=0.35 + 0.5 * done / total)
 
-                result.update(ens.analyze(sentences, on_progress, plain=text, filing_date=meta.filed))
+                result.update(ens.analyze(sentences, on_progress, plain=text, filing_date=meta.filed, company=meta.company))
 
         # ---- every other detector whose Item is present in this filing ----
         def on_status(title: str, cold: bool) -> None:
@@ -182,6 +182,14 @@ def _models_status() -> list:
         })
     from . import dates_model
 
+    from . import checker as checker_model
+
+    c = checker_model.status()
+    if c["state"] != "missing":  # without its adapter answers simply carry no score
+        out.append({
+            "key": "checker", "item": "5.02", "title": "CEO result checker", "state": c["state"], "error": c["error"],
+            "lastError": None, "adapters": 1, "loadSeconds": None, "readers": [],
+        })
     d = dates_model.status()
     if d["state"] != "missing":  # without its adapter the plain pattern reader is used and nothing needs to be shown
         out.append({
@@ -275,11 +283,19 @@ def start_prewarm() -> None:
         except Exception:
             pass
 
+    def load_checker() -> None:
+        try:
+            from . import checker as checker_model
+
+            checker_model.checker()  # the second reader that scores each CEO answer loads with the others
+        except Exception:
+            pass
+
     def go() -> None:
         from concurrent.futures import ThreadPoolExecutor
 
         with ThreadPoolExecutor(max_workers=int(os.getenv("PREWARM_WORKERS", "3"))) as pool:
-            futures = [pool.submit(load_one, fam) for fam in REGISTRY] + [pool.submit(load_dates)]
+            futures = [pool.submit(load_one, fam) for fam in REGISTRY] + [pool.submit(load_dates), pool.submit(load_checker)]
             for f in futures:
                 f.result()
         _activity["t"] = time.time()  # all detectors are ready: the idle clock starts now

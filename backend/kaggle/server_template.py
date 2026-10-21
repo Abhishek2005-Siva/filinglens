@@ -64,6 +64,11 @@ item105_hit = glob.glob("/kaggle/input/**/filinglens-item105/adapter_config.json
 if item105_hit:
     os.environ["ITEM105_DIR"] = os.path.dirname(item105_hit[0])
 print("item105 materiality reader:", os.environ.get("ITEM105_DIR", "not found (detector will error if present)"), flush=True)
+# optional: the result checker (second reader that scores each CEO answer); the `filinglens-verifier` dataset has the adapter files at its root.
+verifier_hit = glob.glob("/kaggle/input/**/filinglens-verifier/adapter_config.json", recursive=True)
+if verifier_hit:
+    os.environ["VERIFIER_DIR"] = os.path.dirname(verifier_hit[0])
+print("result checker:", os.environ.get("VERIFIER_DIR", "not found (answers carry no score)"), flush=True)
 os.environ["USE_GPU"] = "1"
 os.environ["TORCH_THREADS"] = str(os.cpu_count() or 4)
 os.environ["HF_HUB_DISABLE_XET"] = "1"

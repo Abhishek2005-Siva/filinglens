@@ -18,6 +18,7 @@ from typing import Callable, Dict, List, Optional
 
 import torch
 
+from . import checker as checkmod
 from .detect import context as ctxmod
 from .detect import rules
 from .detect.families import BODY_KW_CAP, SECTION_CAP, _keyword_sentences, _load, _sigmoid_probs
@@ -33,6 +34,13 @@ THRESHOLD = 0.5
 MAX_LENGTH = 448
 READER = "RoBERTa-large · reads the whole section"
 _HONORIFIC_SURNAME = re.compile(r"\b(?:Mr|Ms|Mrs|Dr)\.\s+([A-Z][A-Za-z'\-]+)")
+
+
+def _same_person(a: str, b: str) -> bool:
+    skip = {"mr", "ms", "mrs", "dr", "jr", "sr", "ii", "iii"}
+    ta = {w for w in re.sub(r"[^a-z ]", "", a.lower()).split() if len(w) > 1 and w not in skip}
+    tb = {w for w in re.sub(r"[^a-z ]", "", b.lower()).split() if len(w) > 1 and w not in skip}
+    return bool(ta and tb and (ta <= tb or tb <= ta))
 
 
 class Reader:
@@ -53,7 +61,7 @@ class Ensemble:
         return [r.name for r in self.readers]
 
     def analyze(self, sentences: List[str], on_progress: Optional[Callable[[int, int, int], None]] = None,
-                plain: str = "", filing_date: str = "") -> Dict:
+                plain: str = "", filing_date: str = "", company: str = "") -> Dict:
         """sentences: the split Item 5.02 section (for display); plain: the whole filing text the model reads."""
         section = find_item_section(plain, "5.02") if plain else None
         if section is None:
@@ -68,9 +76,9 @@ class Ensemble:
         if on_progress:
             on_progress(1, 1, 0)
         a = rules.analyze(ITEM, section, body_kw, filing_date)
-        return self._decide(sentences, section, probs, a)
+        return self._decide(sentences, section, probs, a, company)
 
-    def _decide(self, sentences: List[str], section: str, probs: List[float], a: Dict) -> Dict:
+    def _decide(self, sentences: List[str], section: str, probs: List[float], a: Dict, company: str = "") -> Dict:
         ceo_sents = [s for s in sentences if re.search(ctxmod.CEO_TITLE_PATTERN, s, re.I)]
         shown: Dict[int, Dict] = {}
         result: Dict = {}
@@ -97,6 +105,11 @@ class Ensemble:
             idx = None
             if evidence:
                 idx = next((i for i, s in enumerate(sentences) if s == evidence or evidence in s or s in evidence), None)
+            check = None
+            if found and evidence and idx is not None:
+                ck = checkmod.checker()
+                if ck is not None:
+                    evidence, name, idx, check = self._check(ck, key, verb, company, sentences, idx, evidence, name, section)
             when = extract_dates(evidence, name or None, around(sentences, idx), role="CEO", kind=key, context=date_window(sentences, idx)) if found and evidence else {"effective": None, "effectiveNote": None, "decided": None}
             if found and when.get("name"):
                 name = best_name(when["name"], name, section) or name  # the trained tagger's name beats the patterns (97% vs 84% held-out)
@@ -114,6 +127,39 @@ class Ensemble:
                 "effectiveNote": when["effectiveNote"],  # "immediately" or "upon ..." when there is no calendar date
                 "decided": when["decided"],  # the date the board acted or the person gave notice, when stated
                 "readers": [{"reader": READER, "voted": found, "confidence": round(p, 4) if found else None}],
+                "check": check,  # the result checker's score, whether a better sentence was found, and "review" when it is not sure
             }
+        a_, r_ = result["appointed"], result["resigned"]
+        if a_["found"] and r_["found"] and a_["name"] and r_["name"] and _same_person(a_["name"], r_["name"]):
+            for e in (a_, r_):  # one person both gaining and losing the CEO role is sometimes real (CEO to Executive Chairman), so only flag it
+                if e["check"] is None:
+                    e["check"] = {"score": None, "state": "review", "reason": "The same person is named as joining and leaving.", "repointed": False}
+                elif e["check"]["state"] == "ok":
+                    e["check"] = {**e["check"], "state": "review", "reason": "The same person is named as joining and leaving."}
         rows = [{"text": s, "readers": [shown[i]] if i in shown else []} for i, s in enumerate(sentences)]
-        return {"sentences": rows, **result, "probabilities": {l: round(float(p), 4) for l, p in zip(LABELS, probs)}}
+        needs_review = any(result[k]["found"] and (result[k]["check"] or {}).get("state") == "review" for k in ("appointed", "resigned"))
+        return {"sentences": rows, **result, "needsReview": needs_review, "probabilities": {l: round(float(p), 4) for l, p in zip(LABELS, probs)}}
+
+    def _check(self, ck, key: str, verb, company: str, sentences: List[str], idx: int, evidence: str, name: str, section: str):
+        """Scores the passage behind the answer. If it looks wrong, tries the other CEO sentences of the section and moves to the best one that
+        scores well; if none does the answer stays and is marked for review."""
+        base = {"role": "CEO", "kind": key, "company": company}
+        cands = [j for j, s in enumerate(sentences) if j != idx and re.search(ctxmod.CEO_TITLE_PATTERN, s, re.I)]
+        cands.sort(key=lambda j: (not verb.search(sentences[j]), abs(j - idx)))
+        cands = cands[:6]
+        names = []
+        for j in cands:
+            ev = regex_extract_ceo_event(sentences[j])
+            names.append(ev[0] if ev and ev[1] == key else (pick_name(sentences[j], key, section) or ""))
+        first = ck.score([{**base, "name": name, "text": date_window(sentences, idx)}])[0]
+        check = {"score": round(first, 4), "state": "ok", "reason": None, "repointed": False}
+        if first >= checkmod.THRESHOLD:
+            return evidence, name, idx, check
+        if cands:
+            scores = ck.score([{**base, "name": n, "text": date_window(sentences, j)} for j, n in zip(cands, names)])
+            best = max(range(len(cands)), key=lambda i: scores[i])
+            if scores[best] >= checkmod.THRESHOLD:
+                j = cands[best]
+                return sentences[j], names[best], j, {"score": round(scores[best], 4), "state": "ok", "reason": None, "repointed": True, "firstScore": round(first, 4)}
+        check.update(state="review", reason="The checker is not sure this is a real change of this company's CEO.")
+        return evidence, name, idx, check

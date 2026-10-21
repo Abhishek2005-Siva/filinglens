@@ -85,6 +85,15 @@ export interface Extraction {
   decided?: string | null // the date the board acted or notice was given, when stated
   votesFor?: number
   readers?: ReaderVote[]
+  check?: ResultCheck | null // the result checker's second opinion (absent when the checker is not running)
+}
+
+export interface ResultCheck {
+  score: number | null // 0 to 1: how likely this is a real change of this company's CEO announced in this filing
+  state: 'ok' | 'review'
+  reason?: string | null
+  repointed?: boolean // the checker moved to a better sentence of the same section
+  firstScore?: number
 }
 
 export interface SentenceRow {
@@ -200,7 +209,7 @@ export interface SlimEvent {
 export interface SlimResult {
   filing: { items: string[] }
   item502Found: boolean
-  appointed: Pick<Extraction, 'found' | 'name' | 'confidence' | 'sentence' | 'effective' | 'effectiveNote' | 'decided'>
-  resigned: Pick<Extraction, 'found' | 'name' | 'confidence' | 'sentence' | 'effective' | 'effectiveNote' | 'decided'>
+  appointed: Pick<Extraction, 'found' | 'name' | 'confidence' | 'sentence' | 'effective' | 'effectiveNote' | 'decided' | 'check'>
+  resigned: Pick<Extraction, 'found' | 'name' | 'confidence' | 'sentence' | 'effective' | 'effectiveNote' | 'decided' | 'check'>
   detectors?: { key: string; applicable: boolean; found: boolean; events: SlimEvent[] }[]
 }

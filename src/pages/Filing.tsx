@@ -17,6 +17,7 @@ function Panel({ kind, ex }: { kind: 'appointed' | 'resigned'; ex: Extraction })
         <span className={`kind k-${kind}`}>{kind === 'appointed' ? '＋' : '−'}</span>
         <div>
           <h3>{title}</h3>
+          {ex.found && ex.check?.state === 'review' && <span className="pill review">Needs review</span>}
           <p className="muted small">{ex.found ? (ex.readers && ex.readers.length > 1 ? `${ex.votesFor} of ${ex.readers.length} readers agreed` : 'Found by the AI reader') : 'Not found in this filing'}</p>
         </div>
       </div>
@@ -27,7 +28,10 @@ function Panel({ kind, ex }: { kind: 'appointed' | 'resigned'; ex: Extraction })
             {whenText(ex) && <div><dt>Effective</dt><dd>{whenText(ex)}</dd></div>}
             {ex.decided && <div><dt>{kind === 'resigned' ? 'Announced / notice' : 'Decided'}</dt><dd>{fmtDate(ex.decided)}</dd></div>}
             <div><dt>Confidence</dt><dd>{ex.confidence != null ? pct(ex.confidence, 2) : '—'}</dd></div>
+            {ex.check?.score != null && <div><dt>Checker</dt><dd>{pct(ex.check.score, 1)}</dd></div>}
           </dl>
+          {ex.check?.state === 'review' && <p className="explain warn">{ex.check.reason || 'The checker is not sure about this one.'} Please read the sentence below.</p>}
+          {ex.check?.repointed && <p className="muted small">The checker moved to a better sentence of the same section.</p>}
           <h4>Sentence the AI relied on</h4>
           <blockquote><Highlight text={ex.sentence ?? ''} names={[ex.name ?? '']} /></blockquote>
           <h4>{ex.readers && ex.readers.length > 1 ? 'How each reader voted' : 'How sure the reader was'}</h4>

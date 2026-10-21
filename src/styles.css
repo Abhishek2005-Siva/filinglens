@@ -103,7 +103,7 @@ nav a.active { background: var(--primary-soft); color: var(--primary); }
 .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: .76rem; font-weight: 650; white-space: nowrap; }
 .pill.warn, .pill.v-false_alarm { background: var(--red-soft); color: var(--red); }
 .pill.v-correct { background: var(--green-soft); color: var(--green); }
-.pill.v-missed { background: var(--amber-soft); color: var(--amber); }
+.pill.v-missed, .pill.review { background: var(--amber-soft); color: var(--amber); }
 
 /* funnel */
 .funnel { display: grid; gap: 10px; }

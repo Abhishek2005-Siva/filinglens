@@ -9,7 +9,7 @@ export const COLUMNS = [
   'CEO appointed', 'CEO leaving', 'CFO appointed', 'CFO leaving',
   'Bankruptcy', 'Delisting / listing notice', 'Auditor change', 'Shareholder votes',
   'Acquisition / sale', 'Material agreements', 'Unregistered equity sales', 'Earnings guidance', 'Restructuring / impairment',
-  'Top confidence', 'Evidence', 'SEC link', 'Accession', 'Status',
+  'Needs review', 'Top confidence', 'Evidence', 'SEC link', 'Accession', 'Status',
 ] as const
 
 export type Column = (typeof COLUMNS)[number]
@@ -62,6 +62,7 @@ export function rowFor(f: FilingRow, r: SlimResult): Row {
     'Unregistered equity sales': summarize(det(r, 'equity')),
     'Earnings guidance': summarize(det(r, 'guidance')),
     'Restructuring / impairment': summarize(det(r, 'restructuring')),
+    'Needs review': [r.appointed.found && r.appointed.check?.state === 'review' ? 'CEO appointed' : '', r.resigned.found && r.resigned.check?.state === 'review' ? 'CEO leaving' : ''].filter(Boolean).join(', '),
     'Top confidence': confs.length ? Math.round(Math.max(...confs) * 1000) / 10 : '',
     'Evidence': evidence,
     'SEC link': f.indexUrl,
