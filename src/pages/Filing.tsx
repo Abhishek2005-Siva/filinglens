@@ -18,6 +18,7 @@ function Panel({ kind, ex }: { kind: 'appointed' | 'resigned'; ex: Extraction })
         <div>
           <h3>{title}</h3>
           {ex.found && ex.check?.state === 'review' && <span className="pill review">Needs review</span>}
+          {ex.found && ex.check?.state === 'likely_wrong' && <span className="pill warn">Probably wrong</span>}
           <p className="muted small">{ex.found ? (ex.readers && ex.readers.length > 1 ? `${ex.votesFor} of ${ex.readers.length} readers agreed` : 'Found by the AI reader') : 'Not found in this filing'}</p>
         </div>
       </div>
@@ -30,7 +31,7 @@ function Panel({ kind, ex }: { kind: 'appointed' | 'resigned'; ex: Extraction })
             <div><dt>Confidence</dt><dd>{ex.confidence != null ? pct(ex.confidence, 2) : '—'}</dd></div>
             {ex.check?.score != null && <div><dt>Checker</dt><dd>{pct(ex.check.score, 1)}</dd></div>}
           </dl>
-          {ex.check?.state === 'review' && <p className="explain warn">{ex.check.reason || 'The checker is not sure about this one.'} Please read the sentence below.</p>}
+          {(ex.check?.state === 'review' || ex.check?.state === 'likely_wrong') && <p className="explain warn">{ex.check.reason || 'The checker is not sure about this one.'} Please read the sentence below.</p>}
           {ex.check?.repointed && <p className="muted small">The checker moved to a better sentence of the same section.</p>}
           <h4>Sentence the AI relied on</h4>
           <blockquote><Highlight text={ex.sentence ?? ''} names={[ex.name ?? '']} /></blockquote>

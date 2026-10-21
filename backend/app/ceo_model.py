@@ -123,6 +123,10 @@ class Ensemble:
                     if check.get("repointed"):
                         evidence, idx = new_ev, new_idx
                         when, name = read_when(evidence, new_name, idx)
+            no_evidence = found and not evidence
+            if no_evidence:
+                # the model says there is a CEO change but no sentence of the section is about one: on unseen filings these are almost always false alarms
+                check = {"score": None, "state": "likely_wrong", "reason": "No sentence in this section is about a change of CEO.", "repointed": False}
             if found and idx is not None:
                 shown[idx] = {"reader": READER, "label": key.upper(), "confidence": round(p, 4), "counts": True}
             result[key] = {
@@ -147,7 +151,7 @@ class Ensemble:
                 elif e["check"]["state"] == "ok":
                     e["check"] = {**e["check"], "state": "review", "reason": "The same person is named as joining and leaving."}
         rows = [{"text": s, "readers": [shown[i]] if i in shown else []} for i, s in enumerate(sentences)]
-        needs_review = any(result[k]["found"] and (result[k]["check"] or {}).get("state") == "review" for k in ("appointed", "resigned"))
+        needs_review = any(result[k]["found"] and (result[k]["check"] or {}).get("state") in ("review", "likely_wrong") for k in ("appointed", "resigned"))
         return {"sentences": rows, **result, "needsReview": needs_review, "probabilities": {l: round(float(p), 4) for l, p in zip(LABELS, probs)}}
 
     def _check(self, ck, key: str, verb, company: str, sentences: List[str], idx: int, evidence: str, name: str, section: str, read_when=None):
@@ -172,5 +176,8 @@ class Ensemble:
             if scores[best] >= checkmod.THRESHOLD:
                 j = cands[best]
                 return sentences[j], names[best], j, {"score": round(scores[best], 4), "state": "ok", "reason": None, "repointed": True, "firstScore": round(first, 4)}
-        check.update(state="review", reason="The checker is not sure this is a real change of this company's CEO.")
+        if first < 0.1:
+            check.update(state="likely_wrong", reason="The checker thinks this is probably not a change of this company's CEO.")
+        else:
+            check.update(state="review", reason="The checker is not sure this is a real change of this company's CEO.")
         return evidence, name, idx, check

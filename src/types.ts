@@ -90,7 +90,7 @@ export interface Extraction {
 
 export interface ResultCheck {
   score: number | null // 0 to 1: how likely this is a real change of this company's CEO announced in this filing
-  state: 'ok' | 'review'
+  state: 'ok' | 'review' | 'likely_wrong'
   reason?: string | null
   repointed?: boolean // the checker moved to a better sentence of the same section
   firstScore?: number

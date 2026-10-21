@@ -62,7 +62,10 @@ export function rowFor(f: FilingRow, r: SlimResult): Row {
     'Unregistered equity sales': summarize(det(r, 'equity')),
     'Earnings guidance': summarize(det(r, 'guidance')),
     'Restructuring / impairment': summarize(det(r, 'restructuring')),
-    'Needs review': [r.appointed.found && r.appointed.check?.state === 'review' ? 'CEO appointed' : '', r.resigned.found && r.resigned.check?.state === 'review' ? 'CEO leaving' : ''].filter(Boolean).join(', '),
+    'Needs review': [['CEO appointed', r.appointed], ['CEO leaving', r.resigned]].flatMap(([label, x]) => {
+      const st = (x as SlimResult['appointed']).found ? (x as SlimResult['appointed']).check?.state : undefined
+      return st === 'review' ? [`${label} (check)`] : st === 'likely_wrong' ? [`${label} (probably wrong)`] : []
+    }).join(', '),
     'Top confidence': confs.length ? Math.round(Math.max(...confs) * 1000) / 10 : '',
     'Evidence': evidence,
     'SEC link': f.indexUrl,
