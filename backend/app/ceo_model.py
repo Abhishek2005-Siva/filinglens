@@ -116,7 +116,7 @@ class Ensemble:
             check = None
             if found and evidence:
                 when, name = read_when(evidence, name, idx)
-                ck = checkmod.checker() if idx is not None else None
+                ck = checkmod.checker()  # when the evidence sentence cannot be placed in the section (idx is None) it is scored on its own
                 if ck is not None:
                     # the checker sees the final name, so a succession announcement is not judged with the outgoing CEO's name
                     new_ev, new_name, new_idx, check = self._check(ck, key, verb, company, sentences, idx, evidence, name, section, read_when)
@@ -155,14 +155,14 @@ class Ensemble:
         scores well; if none does the answer stays and is marked for review."""
         base = {"role": "CEO", "kind": key, "company": company}
         cands = [j for j, s in enumerate(sentences) if j != idx and re.search(ctxmod.CEO_TITLE_PATTERN, s, re.I)]
-        cands.sort(key=lambda j: (not verb.search(sentences[j]), abs(j - idx)))
+        cands.sort(key=lambda j: (not verb.search(sentences[j]), abs(j - (idx or 0))))
         cands = cands[:6]
         names = []
         for j in cands:
             ev = regex_extract_ceo_event(sentences[j])
             nm = ev[0] if ev and ev[1] == key else (pick_name(sentences[j], key, section) or "")
             names.append(read_when(sentences[j], nm, j)[1] if read_when else nm)
-        first = ck.score([{**base, "name": name, "text": date_window(sentences, idx)}])[0]
+        first = ck.score([{**base, "name": name, "text": date_window(sentences, idx) if idx is not None else re.sub(r"\s+", " ", evidence).strip()}])[0]
         check = {"score": round(first, 4), "state": "ok", "reason": None, "repointed": False}
         if first >= checkmod.THRESHOLD:
             return evidence, name, idx, check
