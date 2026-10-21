@@ -105,14 +105,24 @@ class Ensemble:
             idx = None
             if evidence:
                 idx = next((i for i, s in enumerate(sentences) if s == evidence or evidence in s or s in evidence), None)
+            def read_when(ev, nm, ix):
+                """Dates and the final name for one candidate sentence (the trained tagger's name beats the patterns: 97% vs 84% held-out)."""
+                w = extract_dates(ev, nm or None, around(sentences, ix), role="CEO", kind=key, context=date_window(sentences, ix)) if ev else {"effective": None, "effectiveNote": None, "decided": None}
+                if w.get("name"):
+                    nm = best_name(w["name"], nm, section) or nm
+                return w, nm
+
+            when = {"effective": None, "effectiveNote": None, "decided": None}
             check = None
-            if found and evidence and idx is not None:
-                ck = checkmod.checker()
+            if found and evidence:
+                when, name = read_when(evidence, name, idx)
+                ck = checkmod.checker() if idx is not None else None
                 if ck is not None:
-                    evidence, name, idx, check = self._check(ck, key, verb, company, sentences, idx, evidence, name, section)
-            when = extract_dates(evidence, name or None, around(sentences, idx), role="CEO", kind=key, context=date_window(sentences, idx)) if found and evidence else {"effective": None, "effectiveNote": None, "decided": None}
-            if found and when.get("name"):
-                name = best_name(when["name"], name, section) or name  # the trained tagger's name beats the patterns (97% vs 84% held-out)
+                    # the checker sees the final name, so a succession announcement is not judged with the outgoing CEO's name
+                    new_ev, new_name, new_idx, check = self._check(ck, key, verb, company, sentences, idx, evidence, name, section, read_when)
+                    if check.get("repointed"):
+                        evidence, idx = new_ev, new_idx
+                        when, name = read_when(evidence, new_name, idx)
             if found and idx is not None:
                 shown[idx] = {"reader": READER, "label": key.upper(), "confidence": round(p, 4), "counts": True}
             result[key] = {
@@ -140,7 +150,7 @@ class Ensemble:
         needs_review = any(result[k]["found"] and (result[k]["check"] or {}).get("state") == "review" for k in ("appointed", "resigned"))
         return {"sentences": rows, **result, "needsReview": needs_review, "probabilities": {l: round(float(p), 4) for l, p in zip(LABELS, probs)}}
 
-    def _check(self, ck, key: str, verb, company: str, sentences: List[str], idx: int, evidence: str, name: str, section: str):
+    def _check(self, ck, key: str, verb, company: str, sentences: List[str], idx: int, evidence: str, name: str, section: str, read_when=None):
         """Scores the passage behind the answer. If it looks wrong, tries the other CEO sentences of the section and moves to the best one that
         scores well; if none does the answer stays and is marked for review."""
         base = {"role": "CEO", "kind": key, "company": company}
@@ -150,7 +160,8 @@ class Ensemble:
         names = []
         for j in cands:
             ev = regex_extract_ceo_event(sentences[j])
-            names.append(ev[0] if ev and ev[1] == key else (pick_name(sentences[j], key, section) or ""))
+            nm = ev[0] if ev and ev[1] == key else (pick_name(sentences[j], key, section) or "")
+            names.append(read_when(sentences[j], nm, j)[1] if read_when else nm)
         first = ck.score([{**base, "name": name, "text": date_window(sentences, idx)}])[0]
         check = {"score": round(first, 4), "state": "ok", "reason": None, "repointed": False}
         if first >= checkmod.THRESHOLD:
