@@ -70,6 +70,11 @@ verifier_hit = glob.glob("/kaggle/input/**/filinglens-verifier/adapter_config.js
 if verifier_hit:
     os.environ["VERIFIER_DIR"] = os.path.dirname(verifier_hit[0])
 print("result checker:", os.environ.get("VERIFIER_DIR", "not found (answers carry no score)"), flush=True)
+# optional: the retrained main CEO model (two seeds, cleaned labels + hard negatives); the `filinglens-ceo2` dataset holds the folders cl_hn_s42/ and cl_hn_s7/.
+ceo2_hit = glob.glob("/kaggle/input/**/cl_hn_s42/adapter_config.json", recursive=True)
+if ceo2_hit and glob.glob("/kaggle/input/**/cl_hn_s7/adapter_config.json", recursive=True):
+    os.environ["CEO2_DIR"] = os.path.dirname(os.path.dirname(ceo2_hit[0]))
+print("main CEO model v2:", os.environ.get("CEO2_DIR", "not found (using the original single model)"), flush=True)
 os.environ["USE_GPU"] = "1"
 os.environ["TORCH_THREADS"] = str(os.cpu_count() or 4)
 os.environ["HF_HUB_DISABLE_XET"] = "1"

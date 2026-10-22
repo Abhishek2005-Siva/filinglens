@@ -43,6 +43,22 @@ def _same_person(a: str, b: str) -> bool:
     return bool(ta and tb and (ta <= tb or tb <= ta))
 
 
+def _load_dir(d: str, num_labels: int):
+    """Like detect.families._load, but from an explicit adapter folder."""
+    import json
+
+    from peft import PeftModel
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+    from .devices import place
+
+    with open(os.path.join(d, "adapter_config.json")) as f:
+        base = json.load(f)["base_model_name_or_path"]
+    tok = AutoTokenizer.from_pretrained(d)
+    model = AutoModelForSequenceClassification.from_pretrained(base, num_labels=num_labels, problem_type="multi_label_classification", torch_dtype=torch.float32)
+    return tok, place(PeftModel.from_pretrained(model, d).merge_and_unload().float().eval())
+
+
 class Reader:
     def __init__(self, name: str, tok, model, n_labels: int) -> None:
         self.name, self.tok, self.model, self.n_labels = name, tok, model, n_labels
@@ -53,8 +69,15 @@ class Ensemble:
 
     def __init__(self) -> None:
         torch.set_num_threads(int(os.getenv("TORCH_THREADS", str(os.cpu_count() or 4))))
-        tok, model, _ = _load(FOLDER, len(LABELS))
-        self.readers: List[Reader] = [Reader(READER, tok, model, len(LABELS))]
+        v2 = os.getenv("CEO2_DIR")
+        seeds = [os.path.join(v2, f) for f in ("cl_hn_s42", "cl_hn_s7")] if v2 else []
+        if seeds and all(os.path.exists(os.path.join(d, "adapter_config.json")) for d in seeds):
+            # v2: two seeds trained on cleaned labels plus hard negatives (false alarms with no CEO sentence); their probabilities are averaged.
+            # held-out months: appointed F1 .934, resigned F1 .872 (v1: .920 / .868) and 10 of 93 hard negatives flagged (v1: 93 of 93).
+            self.readers = [Reader(f"{READER} · v2 seed {name}", *_load_dir(d, len(LABELS)), len(LABELS)) for d, name in zip(seeds, ("42", "7"))]
+        else:
+            tok, model, _ = _load(FOLDER, len(LABELS))
+            self.readers: List[Reader] = [Reader(READER, tok, model, len(LABELS))]
 
     @property
     def reader_names(self) -> List[str]:
@@ -71,8 +94,8 @@ class Ensemble:
         text = ctxmod.build_context(ITEM, section, body_kw, filing_date=filing_date or None)
         probs = [0.0, 0.0]
         if text.strip():
-            r = self.readers[0]
-            probs = _sigmoid_probs([text], r.tok, r.model, MAX_LENGTH)[0]
+            each = [_sigmoid_probs([text], r.tok, r.model, MAX_LENGTH)[0] for r in self.readers]
+            probs = [sum(p[k] for p in each) / len(each) for k in range(len(LABELS))]
         if on_progress:
             on_progress(1, 1, 0)
         a = rules.analyze(ITEM, section, body_kw, filing_date)
