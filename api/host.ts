@@ -195,7 +195,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const key = process.env.MODEL_API_KEY || ''
       if (!key || String(req.headers.authorization || '') !== `Bearer ${key}`) return res.status(401).json({ error: 'unauthorized' })
       const url = String((body as { url?: string }).url || '').replace(/\/$/, '')
-      if (!/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.(trycloudflare\.com|ngrok-free\.dev|ngrok-free\.app|ngrok\.app)$/.test(url)) return res.status(400).json({ error: 'bad_request', message: 'Not an accepted tunnel address.' })
+      if (/^https:\/\/api\.trycloudflare\.com$/.test(url) || !/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.(trycloudflare\.com|ngrok-free\.dev|ngrok-free\.app|ngrok\.app)$/.test(url)) return res.status(400).json({ error: 'bad_request', message: 'Not an accepted tunnel address.' })
       await setModelUrl(url)
       return res.status(200).json({ ok: true })
     }

@@ -174,9 +174,10 @@ def open_cloudflare(port: int, wait: float = 90.0):
         for line in proc.stdout:
             tail.append(line.rstrip())
             del tail[:-30]
-            m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line)
-            if m and not found:
-                found.append(m.group(0))
+            # cloudflared also prints its own control address (https://api.trycloudflare.com) in startup/error lines: never use that one
+            for m in re.finditer(r"https://([a-z0-9-]+)\.trycloudflare\.com", line):
+                if m.group(1) != "api" and not found:
+                    found.append(m.group(0))
 
     threading.Thread(target=drain, daemon=True).start()
     end = time.time() + wait
