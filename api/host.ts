@@ -202,7 +202,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const infos = await Promise.all(ACCOUNTS.map(inspect))
 
     if (body.action === 'accounts' || body.action === 'status') {
+      const mu = await modelUrl()
       return res.status(200).json({
+        modelHost: mu ? mu.replace(/^https:\/\//, '') : null, // which tunnel address the site is using (a public address, not a secret)
         accounts: infos.filter((i) => i.configured && (eligible(i) || i.kernel === 'RUNNING' || i.kernel === 'QUEUED')),
         hidden: infos
           .filter((i) => !(i.configured && (eligible(i) || i.kernel === 'RUNNING' || i.kernel === 'QUEUED')))
