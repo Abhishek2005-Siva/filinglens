@@ -62,6 +62,9 @@ def _load_dir(d: str, num_labels: int):
     return tok, place(PeftModel.from_pretrained(model, d).merge_and_unload().float().eval())
 
 
+_NAME_BEFORE_WHO = re.compile(r"((?:[A-Z][A-Za-z'’\-]*\.?\s+){1,3}[A-Z][\w'’\-]+),\s+who\s+(?:will|has|is|was)\b")
+
+
 class Reader:
     def __init__(self, name: str, tok, model, n_labels: int) -> None:
         self.name, self.tok, self.model, self.n_labels = name, tok, model, n_labels
@@ -149,6 +152,9 @@ class Ensemble:
                     if check.get("repointed"):
                         evidence, idx = new_ev, new_idx
                         when, name = read_when(evidence, new_name, idx)
+            if found and evidence and key == "appointed" and not name:
+                m = _NAME_BEFORE_WHO.search(evidence)  # "... Agreement with Todd W. Seyfert, who will become the President and CEO"
+                name = m.group(1) if m else name
             no_evidence = found and not evidence
             if no_evidence:
                 # the model says there is a CEO change but no sentence of the section is about one: on unseen filings these are almost always false alarms
