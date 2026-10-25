@@ -163,6 +163,8 @@ def best_name(model_name: Optional[str], fallback: Optional[str], section: str =
     if not model_name:
         return fallback
     words = re.findall(r"[A-Za-z][A-Za-z'’\-]+", re.sub(r"(?i)\b(?:mr|ms|mrs|dr|jr|sr)\b\.?", " ", model_name))
+    if not words:  # a lone initial ("W") is a cut-off name, not a name
+        return fallback
     if len(words) == 1 and section:
         from .people import resolve_surname
 

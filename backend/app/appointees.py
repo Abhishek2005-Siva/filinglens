@@ -130,9 +130,10 @@ def rule_appointments(section: str):
 
 
 # ---- patterns found by reading our answers in the January-February 2025 scan
+_PREVIOUSLY = re.compile(r"(?i)as\s+previously\s+(?:disclosed|announced|reported)|\bpreviously\s+(?:disclosed|announced|reported)\b")
+_AFTER_APPOINTING = re.compile(r"(?i)\b(?:appointed|named|elected|promoted|designated|selected)\b")
 _REPEAT = re.compile(
-    r"(?i)as\s+previously\s+(?:disclosed|announced|reported)|\bpreviously\s+(?:disclosed|announced|reported)\b|"
-    r"(?:disclosure|information)\s+(?:set\s+forth\s+)?[^.]{0,80}(?:Current\s+Report|Form\s+8-K)\s+filed|"
+    r"(?i)(?:disclosure|information)\s+(?:set\s+forth\s+)?[^.]{0,80}(?:Current\s+Report|Form\s+8-K)\s+filed|"
     r"filing\s+this\s+amendment|^\s*(?:CEO\s+)?(?:Employment|Offer)\s+(?:Agreement|Letter)\b|\boffer\s+letter\s+with\b|"
     r"in\s+connection\s+with\s+(?:his|her|their|(?:Mr|Ms|Mrs|Dr)\.?\s+[\w'’\-]+['’]?s?)\s+appointment\b[^.]{0,100}(?:entered\s+into|employment\s+agreement|offer\s+letter)")
 _SUB_UNIT = re.compile(r"(?i)\b(?:chief\s+executive\s+officer|CEO)\s+(?:of|at|for)\s+(?:the\s+)?(?!the\s+company\b)(?:[A-Z][\w&.’'\-]*\s+){0,5}(?:business|division|segment|unit|region|platform|bank|subsidiary|CIB)\b")
@@ -143,7 +144,12 @@ _AS_DIRECTOR = re.compile(r"(?i)\bas\s+a\s+(?:member\s+of\s+the\s+board\s+of\s+)
 
 def repeats_earlier_announcement(sentence: str) -> bool:
     """The sentence recalls an appointment announced in an earlier filing, or gives only the pay terms of one."""
-    return bool(_REPEAT.search(sentence or ""))
+    sentence = sentence or ""
+    if _REPEAT.search(sentence):
+        return True
+    # "As previously disclosed, the Board appointed X" recalls the appointment; "the Board appointed X ... Ms. Y's previously disclosed retirement" recalls something else
+    m = _PREVIOUSLY.search(sentence)
+    return bool(m and not _AFTER_APPOINTING.search(sentence[: m.start()]))
 
 
 def sub_unit_title(sentence: str) -> bool:
