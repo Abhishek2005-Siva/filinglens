@@ -50,7 +50,7 @@ export function rowFor(f: FilingRow, r: SlimResult): Row {
     'Events found': titles.length,
     'Event summary': titles.join('; '),
     'CEO appointed': r.appointed.found ? person(r.appointed.name, r.appointed.confidence, false, r.appointed) : '',
-    'CEO leaving': r.resigned.found ? person(r.resigned.name, r.resigned.confidence, false, r.resigned) : '',
+    'CEO leaving': r.resigned.found ? person(r.resigned.name, r.resigned.confidence, false, r.resigned) + (r.resigned.staysAs ? ` · stays as ${r.resigned.staysAs}` : '') + (r.resigned.coCeo ? ' · Co-CEO' : '') : '',
     'CFO appointed': cfoApp ? person(cfoApp.name, cfoApp.confidence, cfoApp.interim, cfoApp) : '',
     'CFO leaving': cfoRes ? person(cfoRes.name, cfoRes.confidence, cfoRes.interim, cfoRes) : '',
     'Bankruptcy': summarize(det(r, 'bankruptcy')),

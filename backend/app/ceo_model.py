@@ -19,6 +19,7 @@ from typing import Callable, Dict, List, Optional
 import torch
 
 from . import checker as checkmod
+from .roles import stays_as
 from .detect import context as ctxmod
 from .detect import rules
 from .detect.families import BODY_KW_CAP, SECTION_CAP, _keyword_sentences, _load, _sigmoid_probs
@@ -165,6 +166,9 @@ class Ensemble:
                 "decided": when["decided"],  # the date the board acted or the person gave notice, when stated
                 "readers": [{"reader": READER, "voted": found, "confidence": round(p, 4) if found else None}],
                 "check": check,  # the result checker's score, whether a better sentence was found, and "review" when it is not sure
+                # a CEO who gives up the CEO role but stays (Executive Chairman, CEO of a division, advisor): the role kept, when the filing names one
+                "staysAs": stays_as(sentences, idx, name) if (found and evidence and key == "resigned") else None,
+                "coCeo": bool(found and evidence and re.search(r"(?i)\bco-?\s?(?:chief\s+executive|ceo)", evidence)),
             }
         a_, r_ = result["appointed"], result["resigned"]
         if a_["found"] and r_["found"] and a_["name"] and r_["name"] and _same_person(a_["name"], r_["name"]):
