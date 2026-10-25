@@ -41,7 +41,10 @@ _INVISIBLE_RE = re.compile(r"[\u200b\u200c\u200d\ufeff]")
 # "|" is allowed because html_to_text_with_tables() joins layout-table cells
 # with " | ", so a heading laid out as a table row reads "Item 5.07. | Submission
 # of Matters..." or "Item | 5.07 | Submission...".
-_HEADING_RE = re.compile(r"^[ \t]*item[\s|]*(\d{1,2}\.\d{2})\b", re.IGNORECASE | re.MULTILINE)
+# Some filings write the heading without the word ("4.01 Changes in Registrant's Certifying Accountant") or with the word cut by a
+# line break ("It\nem 4.01"): the first is accepted only for a real 8-K Item number (then the caption check below still applies).
+_ITEM_NUMBER = r"(?:1\.0[1-5]|2\.0[1-6]|3\.0[1-3]|4\.0[12]|5\.0[1-8]|6\.0[1-5]|7\.01|8\.01|9\.01)"
+_HEADING_RE = re.compile(rf"^[ \t]*(?:it\s*em[\s|]*(\d{{1,2}}\.\d{{2}})\b|({_ITEM_NUMBER})\b)", re.IGNORECASE | re.MULTILINE)
 _SIGNATURE_LINE_RE = re.compile(r"^[ \t]*SIGNATURES?\b", re.MULTILINE)
 _AFTER_NUMBER_RE = re.compile(r"[ \t.:|\-–—]*\s*(\S[^\n]{0,80})?")
 
@@ -63,7 +66,7 @@ def _is_real_heading(text: str, m: "re.Match") -> bool:
 
 def list_headings(text: str) -> List[Tuple[int, str]]:
     """(offset, item number) of every real Item heading in document order."""
-    return [(m.start(), m.group(1)) for m in _HEADING_RE.finditer(text) if _is_real_heading(text, m)]
+    return [(m.start(), m.group(1) or m.group(2)) for m in _HEADING_RE.finditer(text) if _is_real_heading(text, m)]
 
 
 def find_item_section(text: str, item: str) -> Optional[str]:

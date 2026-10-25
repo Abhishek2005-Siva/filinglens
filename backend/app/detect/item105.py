@@ -17,6 +17,7 @@ LOG.md and TRAIN_LOG.md for the full build and the 5-fold
 cross-validation result this component's `experimental` string quotes.
 """
 import json
+import re
 import os
 import threading
 import time
@@ -75,6 +76,35 @@ def _softmax_probs(texts: List[str], tok, model, max_length: int = 512) -> List[
         return torch.softmax(model(**enc).logits.float(), dim=-1).tolist()
 
 
+_NOT_MATERIAL = re.compile(
+    r"(?i)\b(?:has|have|had|did|does|do)\s+not\s+(?:had\s+|have\s+|yet\s+had\s+)?(?:a\s+|any\s+)?material|not\s+reasonably\s+likely\s+to\s+(?:have\s+|materially\s+)|"
+    r"\bno\s+material\s+(?:impact|effect|adverse)|\bnot\s+(?:been\s+)?(?:determined\s+to\s+be\s+)?material\b|does\s+not\s+believe[^.]{0,80}material")
+_MATERIAL = re.compile(
+    r"(?i)(?<!not\s)(?<!not\s{2})\b(?:is|are|was|were|be)\s+reasonably\s+likely\s+to\s+(?:have\s+|materially\s+)|"
+    r"\bdetermined\s+that\s+(?:the\s+|this\s+)?(?:incident|event)[^.]{0,80}\b(?:is|was)\s+(?:a\s+)?material|"
+    r"\b(?:has|have)\s+had\s+(?:a\s+)?material\s+(?:impact|effect)")
+_UNDER = re.compile(r"(?i)(?:not\s+(?:yet\s+)?(?:determined|concluded|able\s+to\s+determine)|unable\s+to\s+determine|has\s+not\s+yet\s+determined|still\s+(?:assessing|evaluating|determining))[^.]{0,80}(?:material(?:ity|ly)?|reasonably\s+likely)")
+
+
+def stated_materiality(text: str):
+    """(label, sentence) when the Item itself says whether the incident is material; None when it is silent. A 'not' decides first."""
+    sents = re.split(r"(?<=[.;])\s+", re.sub(r"\s+", " ", text))
+    found = {}
+    for sent in sents:
+        if re.search(r"(?i)forward-looking|could\s+cause\s+actual\s+results", sent):
+            continue
+        if _UNDER.search(sent):
+            found.setdefault("UNDER_ASSESSMENT", sent)
+        elif _NOT_MATERIAL.search(sent):
+            found.setdefault("NOT_MATERIAL", sent)
+        elif _MATERIAL.search(sent):
+            found.setdefault("MATERIAL", sent)
+    for label in ("UNDER_ASSESSMENT", "NOT_MATERIAL", "MATERIAL"):
+        if label in found:
+            return label, found[label][:400]
+    return None
+
+
 class CyberIncident(Family):
     key, item, title = "cyber_incident", "1.05", "Material cybersecurity incident"
     models = ["item105"]
@@ -104,12 +134,22 @@ class CyberIncident(Family):
         probs = _softmax_probs([text], self._tok, self._model)[0]
         pred_idx = max(range(len(LABELS)), key=lambda i: probs[i])
         pred = LABELS[pred_idx]
+        said = stated_materiality(text)
+        evidence = None
+        if said and said[0] != pred:
+            # the Item states its own conclusion ("has not had a material impact and is not reasonably likely to ..."): the model, trained on 55
+            # filings and nearly undecided on most of them, does not overrule the text
+            pred, evidence = said[0], said[1]
+            pred_idx = LABELS.index(pred)
+        elif said:
+            evidence = said[1]
         titles = {"MATERIAL": "Determined material", "NOT_MATERIAL": "Determined not material",
                   "UNDER_ASSESSMENT": "Materiality assessment ongoing"}
         return {
             "key": self.key, "item": self.item, "title": self.title, "applicable": True,
             "experimental": self.experimental, "found": True,
-            "events": [{"label": pred, "title": titles[pred], "confidence": round(probs[pred_idx], 4)}],
+            "events": [{"label": pred, "title": titles[pred], "confidence": round(probs[pred_idx], 4), **({"evidence": evidence} if evidence else {}),
+                        **({"source": "the filing's own words"} if said and said[0] == pred and evidence else {})}],
             "probabilities": {l: round(p, 4) for l, p in zip(LABELS, probs)},
             "readerNames": ["RoBERTa-large (single model -- too little data for an ensemble)"],
             "inputText": text[:1500],

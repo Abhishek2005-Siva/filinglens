@@ -140,6 +140,7 @@ class DistressFamily(Family):
     """Section-level multi-label classifier ensemble (probabilities averaged)."""
 
     spec: List[tuple] = []  # (folder, max_len, display name)
+    rescue_at: Optional[float] = None   # report the likeliest label of a long, declared Item when nothing reaches 0.5 but this one reaches this value
     event_titles: Dict[str, str] = {}
 
     def _load_models(self) -> None:
@@ -172,6 +173,12 @@ class DistressFamily(Family):
         mean = [sum(p[k] for _, p in per_model) / len(per_model) for k in range(len(labels))]
         pred = [l for l, v in zip(labels, mean) if v >= 0.5]
         a = rules.analyze(self.item, section, body_kw, filing_date)
+        rescued = False
+        if not pred and self.rescue_at is not None and len(section) >= 600:
+            # the readers split (one at 0.01, one at 0.5) on a filing that declares the Item and says plenty: report the likeliest label, marked as unsure
+            k = max(range(len(labels)), key=mean.__getitem__)
+            if mean[k] >= self.rescue_at or a["evidence"].get(labels[k]):
+                pred, rescued = [labels[k]], True
         events = []
         for l in sorted(pred, key=lambda l: -mean[labels.index(l)]):
             events.append({
@@ -180,6 +187,7 @@ class DistressFamily(Family):
                 "confidence": round(mean[labels.index(l)], 4),
                 "evidence": a["evidence"].get(l),
                 "readers": [{"reader": n, "probability": round(p[labels.index(l)], 4)} for n, p in per_model],
+                **({"unsure": True} if rescued else {}),
             })
         return {
             "key": self.key, "item": self.item, "title": self.title, "applicable": True, "experimental": self.experimental,
@@ -194,6 +202,7 @@ class DistressFamily(Family):
 
 class Bankruptcy(DistressFamily):
     key, item, title = "bankruptcy", "1.03", "Bankruptcy or receivership"
+    rescue_at = 0.25
     spec = [("bankruptcy_rl42", 448, "Reader A · RoBERTa-large"), ("bankruptcy_db42", 384, "Reader B · DeBERTa-v3")]
     models = [s[0] for s in spec]
     event_titles = {

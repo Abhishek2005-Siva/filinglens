@@ -23,7 +23,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from ..devices import place
 from . import agreements
-from .deal_text import deal_sentences, extract_amounts, strip_caption
+from .deal_text import deal_amount, deal_sentences, extract_amounts, strip_caption
 from .families2 import MAX_SECTION, Agreements, _money, _softmax_probs
 from .items import find_item_section, normalize_filing_text
 from .labelers201 import mark_self, self_aliases
@@ -125,9 +125,21 @@ class AgreementsV2(Agreements):
             for k, name in ((1, "ENTERED"), (2, "TERMINATED")):
                 if p[k] >= 0.5 and (name not in best or p[k] > best[name][0]):
                     best[name] = (p[k], s, it)
+        # a filing that declares Item 1.01 reports an agreement entered, and one that declares Item 1.02 reports one ended: when the filing reader
+        # stayed under its threshold for that event, report it with the reader's most likely type (marked as coming from the Item) ...
+        from_item = set()
+        for ev, item, off in (("ENTERED", "1.01", 0), ("TERMINATED", "1.02", 6)):
+            if not picked[ev] and sections.get(item):
+                j = max(range(6), key=lambda i: probs[off + i])
+                picked[ev] = [(TYPES[j], probs[off + j])]
+                from_item.add(ev)
         events = []
         for ev, title in (("ENTERED", "Material agreement entered"), ("TERMINATED", "Material agreement terminated")):
             if not picked[ev]:
+                continue
+            # ... and the other way round: an event from the other Item's text alone needs a sentence that says it (a termination clause inside a newly signed
+            # distribution agreement is not a termination)
+            if ev not in best and not sections.get("1.02" if ev == "TERMINATED" else "1.01"):
                 continue
             fallback_item = "1.02" if ev == "TERMINATED" and sections.get("1.02") else ("1.01" if sections.get("1.01") else "1.02")
             if ev in best:
@@ -137,15 +149,15 @@ class AgreementsV2(Agreements):
                 sent, it = (first[0] if first else ""), fallback_item
             top_type, top_p = picked[ev][0]
             bits = ["Type: " + ", ".join(TYPE_NAMES[t] for t, _ in picked[ev])]
-            party = agreements.extract_counterparty(sent) if sent else None
-            amounts = extract_amounts(sent) if sent else []
+            party = agreements.extract_counterparty(sent, company) if sent else None
+            amount = deal_amount(sent, sections.get(it) or sections.get(fallback_item) or "") if sent else None
             if party:
                 bits.append(f"Counterparty: {party}")
-            if amounts:
-                bits.append(f"Amount: {_money(max(amounts))}")
+            if amount:
+                bits.append(f"Amount: {_money(amount)}")
             events.append({
                 "label": ev, "title": f"{title} (Item {it})", "confidence": round(top_p, 4), "evidence": sent, "detail": " · ".join(bits),
-                "types": [{"type": t, "probability": round(p, 4)} for t, p in picked[ev]],
+                "types": [{"type": t, "probability": round(p, 4)} for t, p in picked[ev]], **({"fromItem": True} if ev in from_item else {}),
                 "readers": [{"reader": f"Filing reader · RoBERTa-large ×{len(self._docr)} ({TYPE_NAMES[top_type]})", "probability": round(top_p, 4)}],
             })
         return {"key": self.key, "item": self.item, "title": self.title, "applicable": True, "experimental": self.experimental,

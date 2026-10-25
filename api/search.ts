@@ -62,7 +62,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       total: data.hits.total.value,
       from,
       pageSize: data.hits.hits.length,
-      filings: rows,
+      // the SEC text search matches the words "Item 1.03" anywhere (a trust's boilerplate, a cross-reference), so keep only filings that declare the Item
+      filings: item ? rows.filter((r) => r.items.includes(item)) : rows,
     })
   } catch (e) {
     return res.status(502).json({ error: 'Could not reach the SEC search.', detail: String(e) })

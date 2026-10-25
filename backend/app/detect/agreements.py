@@ -212,9 +212,42 @@ _COUNTERPARTY_RE = re.compile(
 _NOT_COUNTERPARTY = {"the company", "the registrant", "the partnership", "the parties", "company"}
 
 
-def extract_counterparty(sentence: str) -> Optional[str]:
+_NOT_A_PARTY = re.compile(
+    r"(?i)\b(?:agreement|amendment|note|notes|merger|plan|commission|contract|facility|indenture|warrants?|offering|prospectus|act|code|"
+    r"supplement|exhibit|schedule|credit\s+facility|letter|guarant\w+|reimbursement|lease|purchase|sale|restated|revised|following|parties|securities\s+and)\b")
+_ENTITY = re.compile(
+    r"\b((?:[A-Z][\w&.'’\-]*[ ,]+(?:&\s+|of\s+|and\s+)?){0,5}?[A-Z][\w&.'’\-]*?),?\s+"
+    r"(N\.A\.|Inc\.?|LLC|L\.L\.C\.|L\.P\.|LP|Corp(?:oration)?\.?|Ltd\.?|LLP|PLC|plc|S\.A\.|AG|Bank|Company|Trust|Capital|Partners|Securities|Group|Holdings|Limited)\b")
+
+
+def _bad_party(name: str, company: str = "") -> bool:
+    n = name.strip(" ,.").lower()
+    if n in _NOT_COUNTERPARTY or len(n) < 3 or _NOT_A_PARTY.search(name):
+        return True
+    toks = {t for t in re.findall(r"[a-z0-9]+", company.lower()) if len(t) > 2}
+    nt = {t for t in re.findall(r"[a-z0-9]+", n) if len(t) > 2}
+    return bool(toks and nt and nt <= toks)  # the registrant itself
+
+
+def extract_counterparty(sentence: str, company: str = "") -> Optional[str]:
+    rejected = False
     for m in _COUNTERPARTY_RE.finditer(sentence):
         name = m.group(1).strip(" ,")
-        if name.lower() not in _NOT_COUNTERPARTY and len(name) >= 3:
+        if not _bad_party(name, company):
             return name
-    return None
+        rejected = True
+    if not rejected:
+        return None
+    # the only 'with X' phrases named a document, not a party ('amendment to the Restated Credit Agreement among ...'): take the first
+    # company-looking name, preferring one followed by its role ('Bank of America, N.A., as administrative agent')
+    text = re.sub(r"\([^)]{0,60}\)", " ", sentence)
+    found = []
+    for m in _ENTITY.finditer(text):
+        name = (m.group(1) + (" " if m.group(2) in ("Bank", "Company", "Trust", "Capital", "Partners", "Securities", "Group", "Holdings", "Limited") else ", ") + m.group(2)).strip()
+        name = re.sub(r"^(?:On|The|In|Under|Pursuant|And|With|Among|Between|As|By|Date|Effective|Company)[\s,]+", "", name)
+        if len(name.split()) >= 2 and not _bad_party(name, company):
+            found.append((name, bool(re.match(r"\s*,?\s*as\s+(?:the\s+)?[a-z]", text[m.end():m.end() + 20]))))
+    for name, has_role in found:
+        if has_role:
+            return name
+    return found[0][0] if found else None

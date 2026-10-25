@@ -39,6 +39,9 @@ _COLS = {  # normalised header text -> canonical column
     "withheld": "withheld", "withhold": "withheld", "votes withheld": "withheld", "vote withheld": "withheld",
     "broker": "broker", "broker non votes": "broker", "broker nonvotes": "broker", "broker non vote": "broker",
     "broker nonvote": "broker", "non votes": "broker", "nonvotes": "broker",
+    "votes for approval": "for", "for approval": "for", "affirmative votes": "for", "votes in favor": "for", "votes cast for": "for", "shares voted for": "for",
+    "yes": "for", "votes against approval": "against", "against approval": "against", "negative votes": "against", "negative": "against",
+    "votes cast against": "against", "no": "against", "votes in opposition": "against",
     "1 year": "y1", "one year": "y1", "1 yr": "y1", "2 years": "y2", "two years": "y2", "2 yrs": "y2",
     "3 years": "y3", "three years": "y3", "3 yrs": "y3",
 }
@@ -68,17 +71,37 @@ def _is_numeric_row(cells: List[str]) -> bool:
 
 
 def _header_cols(cells: List[str]) -> Optional[List[Optional[str]]]:
-    """Canonical column list if `cells` is a vote-table header (>=2 known vote
-    columns), with None marking a leading name column; else None."""
-    cols = [_COLS.get(_norm_head(c)) for c in cells]
-    known = [c for c in cols if c]
-    if len(known) >= 2 and all((c is not None) or (_norm_head(h) in _NAME_HEADS) for c, h in zip(cols, cells)):
+    """Canonical column list if `cells` is a vote-table header (>=2 known vote columns), with None for a leading name column and '_' for a column
+    we do not use (a percentage, 'Witheld', ...) so that data cells stay aligned; else None. A header cell split in two ("Broker" | "Non-Votes") counts once."""
+    cols: List[Optional[str]] = []
+    prev = None
+    for i, c in enumerate(cells):
+        canon = _COLS.get(_norm_head(c))
+        if canon and canon == prev:
+            continue  # the second half of a split header cell
+        if canon is None and (i > 0 and _norm_head(c) not in _NAME_HEADS):
+            if (len(c) > 60 and not re.search(r"(?i)percent|%|of shares", c)) or re.search(r"\d{3}", c):
+                return None  # a long text cell or a number: not a header
+            if prev == "_":
+                continue
+            canon = "_"
+        cols.append(canon)
+        prev = canon
+    known = [c for c in cols if c and c != "_"]
+    if len(known) >= 2 and (cols[0] is None or cols[0] in _COLS.values()):
+        while cols and cols[-1] == "_":
+            cols.pop()
         return cols
     return None
 
 
 def _split_cells(line: str) -> List[str]:
-    return [c.strip() for c in line.split(" | ")]
+    cells = [c.strip() for c in line.split(" | ")]
+    first, rest = cells[0], [c for c in cells[1:] if c]
+    # a share of the vote written next to the count ("92.30 | %", "99.7%") is not a count
+    if len(rest) >= 3 and sum(bool(re.fullmatch(r"[\d,]{3,}", c)) for c in rest) >= 2:
+        rest = [c for c in rest if c != "%" and not re.fullmatch(r"\d{1,3}(?:\.\d+)?\s*%?", c)]
+    return [first] + rest
 
 
 # --- vote-table parser -----------------------------------------------------------------------
@@ -92,6 +115,7 @@ def parse_votes(section: str) -> dict:
     tables: List[dict] = []
     desc_lines: List[str] = []
     cur: Optional[dict] = None
+    last_header: Optional[List[Optional[str]]] = None
 
     def close():
         nonlocal cur
@@ -110,21 +134,40 @@ def parse_votes(section: str) -> dict:
             if ln.strip():
                 desc_lines.append(ln.strip())
                 desc_lines = desc_lines[-6:]
+                if len(ln.strip()) > 80:
+                    last_header = None  # a new paragraph: a table that follows brings its own header
             continue
         cells = _split_cells(ln)
         header = _header_cols(cells)
         if header:  # horizontal table header row
             close()
             cur = {"desc": " ".join(desc_lines[-3:]), "last": desc_lines[-1] if desc_lines else "", "header": header, "rows": [], "orient": "h"}
+            last_header = header
             continue
-        if cur and cur["orient"] == "h" and _is_numeric_row(cells[1:] if len(cells) > len(cur["header"]) - 0 and
+        if last_header and len(cells) >= 2 and re.fullmatch(r"\(?\d{1,2}[.)]?", cells[0]) and _to_int(cells[1]) is None:
+            # one shared header, then '2. | To approve the compensation ... | 413,337,605 | 98.1 | ...' or '1. | To appoint the following directors:': a new proposal
+            text, nums = cells[1], cells[2:]
+            if len(nums) >= 2 and _is_numeric_row(nums):
+                close()
+                cols = [c for c in last_header if c is not None]
+                row = {"name": text}
+                for c, v in zip(cols, nums):
+                    if c != "_":
+                        row[c] = _to_int(v)
+                cur = {"desc": text, "last": text, "header": last_header, "rows": [row], "orient": "h"}
+            else:
+                close()
+                cur = {"desc": text, "last": text, "header": last_header, "rows": [], "orient": "h"}
+            continue
+        if cur and cur["orient"] == "h" and len(cells) >= 3 - (_to_int(cells[0]) is None) and _is_numeric_row(cells[1:] if len(cells) > len(cur["header"]) - 0 and
                                                            _to_int(cells[0]) is None else cells):
             nums_cells = cells[1:] if _to_int(cells[0]) is None else cells
             name = cells[0] if _to_int(cells[0]) is None else ""
-            cols = [c for c in cur["header"] if c]
+            cols = [c for c in cur["header"] if c is not None]
             row = {"name": name}
             for c, v in zip(cols, nums_cells):
-                row[c] = _to_int(v)
+                if c != "_":
+                    row[c] = _to_int(v)
             cur["rows"].append(row)
             continue
         # vertical key|value rows: "For | 5,819,219"
@@ -145,6 +188,8 @@ def parse_votes(section: str) -> dict:
     proposals, say_on_pay = [], None
     expanded = []
     for t in tables:
+        t["rows"] = [r for r in t["rows"] if not re.match(r"(?i)\s*(?:percent|percentage|%)", r.get("name", ""))] or t["rows"]  # 'Percentage of outstanding shares: 58.60 | 3.02'
+    for t in tables:
         if len(t["rows"]) >= 2 and all(_PROPOSALISH.search(r.get("name", "")) for r in t["rows"]):
             for r in t["rows"]:  # each row is its own proposal
                 expanded.append({**t, "rows": [r], "desc": r.get("name", ""), "last": r.get("name", "")})
@@ -156,7 +201,7 @@ def parse_votes(section: str) -> dict:
         desc = t["desc"]
         if {"y1", "y2", "y3"} & cols:
             kind = "frequency"
-        elif len(rows) >= 2 or "withheld" in cols or _DIRECTOR_DESC.search(t.get("last", "")):
+        elif len(rows) >= 2 or "withheld" in cols or (_DIRECTOR_DESC.search(t.get("last", "")) and not _NOT_ELECTION.search(t.get("last", ""))):
             kind = "directors"
         else:
             kind = "proposal"
@@ -186,7 +231,8 @@ def parse_votes(section: str) -> dict:
 
 
 # --- segment extraction -----------------------------------------------------------------------
-_DIRECTOR_DESC = re.compile(r"(?i:elect\w*[^.]{0,60}director|director[^.]{0,40}elect|nominees?)")
+_NOT_ELECTION = re.compile(r"(?i)\b(?:guideline|policy|proposal|amend\w*|resignation|majority\s+voting|declassif\w*|bylaws?|plan|compensation|ratif\w*)\b")
+_DIRECTOR_DESC = re.compile(r"(?i:\belect(?:ed|ion|s)?\b[^.]{0,60}\bdirectors?\b|\bdirectors?\b[^.]{0,40}\belect(?:ed|ion|s)?\b|\bnominees?\b)")  # not 'selection of the firm ... Board of Directors' 
 _SAY_ON_PAY_DESC = re.compile(r"(?i:(?:compensation|pay)\s+of\s+(?:[\w’'.&-]+\s+){0,4}named\s+executive|"
                               r"executive\s+compensation|say[\s-]on[\s-]pay|named\s+executive\s+officer\s+compensation)")
 _FREQ_DESC = re.compile(r"(?i:frequency|every\s+(?:one|1|two|2|three|3)\s+year)")

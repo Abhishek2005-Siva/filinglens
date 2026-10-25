@@ -116,7 +116,7 @@ _ENGAGE = re.compile(
 # "ended the engagement of X" / "terminated its relationship with X" mention an
 # engagement without making one; mask before looking for engagement language.
 _END_ENGAGEMENT = re.compile(
-    r"(?i:(?:end(?:ed|ing|s)?|terminat\w+|discontinu\w+)\s+(?:the\s+|its\s+|our\s+)?(?:\w+\s+)?"
+    r"(?i:(?:end(?:ed|ing|s)?|terminat\w+|discontinu\w+|(?:not\s+(?:to\s+)?)?renew\w*)\s+(?:the\s+|its\s+|our\s+)?(?:\w+\s+)?"
     r"(?:engagement|relationship)(?:\s+(?:of|with))?)"
 )
 # "Deloitte’s appointment will be for the fiscal year ending..." describes an
@@ -131,7 +131,7 @@ _FUTURE_ENGAGE = re.compile(
 _FUTURE_ENGAGE2 = re.compile(
     r"(?i:will\s+disclose[^.]{0,60}|(?:is|are)\s+(?:currently\s+)?in\s+(?:the\s+)?process\s+of\s+(?:engag|appoint|retain)\w*|"
     r"has\s+not\s+(?:yet\s+)?completed\s+the\s+engagement|previously\s+been\s+(?:appointed|engaged)|"
-    r"engagement\s+of\s+[^.]{0,100}?\bended\b|has\s+agreed\s+to\s+perform)"
+    r"engagement\s+of\s+[^.]{0,100}?\bended\b|has\s+agreed\s+to\s+perform|remain(?:s|ed)?\s+engaged)"
 )
 _RE_WORDS = re.compile(r"(?i:\bre-?(?:appointment|engagement|election|engage\w*|appoint\w*)\b)")
 _SELECTION_PROCESS = re.compile(r"(?i:selection\s+process|competitive\s+process|request[\s-]for[\s-]proposal|\bRFP\b)")
@@ -302,6 +302,14 @@ _OLD_OBJECT = re.compile(r"(?i:dismiss(?:ed|al\s+of)|discharg(?:ed)|terminat(?:e
 _NEW_OBJECT = re.compile(r"(?i:engag(?:ed|ement\s+of)|appoint(?:ed|ment\s+of)|retain(?:ed)|select(?:ed|ion\s+of))\s+" + _OBJ_NAME)
 
 
+_SELF_DEFINITION = re.compile(r"\s*\(\s*(?:the\s+|“\s*the\s+)?[“\"']?\s*(?:Company|Registrant|Partnership|Fund|Trust|we|our|us|Issuer|Corporation)\b", re.I)
+
+
+_NEW_OBJECT_AFTER_FIRM = re.compile(
+    r"(?i:engag(?:e|ed|ing)|appoint(?:ed|ing)?|retain(?:ed|ing)?|select(?:ed|ing)?)\s+(?:the\s+|as\s+its\s+)?(?:new\s+)?(?:independent\s+)?(?:registered\s+)?(?:public\s+)?"
+    r"(?:accounting\s+firm|accountants?|auditors?),?\s+" + _OBJ_NAME)
+
+
 def extract_firms(sentence: str) -> List[str]:
     """Auditor names in a sentence, in order of appearance. Parenthetical aliases
     ("Ernst & Young LLP (“EY”)") are ignored so each firm is listed once."""
@@ -322,6 +330,8 @@ def _firm_spans(sentence: str):
         name = re.sub(r"^(?:On|The|Company|Board|Audit|Committee|And)\s+", "", m.group(0)).strip(" ,")
         if all(w.lower().strip(".,") in _NAME_STOP for w in name.split()):
             continue
+        if _SELF_DEFINITION.match(sentence, m.end()):
+            continue  # 'Bloom HoldCo LLC (the “Company”) engaged ...': the registrant, not an auditor
         spans.append((name, (m.start(), m.end())))
     for m in KNOWN_FIRM_RE.finditer(masked):
         if not any(a <= m.start() < b for _, (a, b) in spans):
@@ -352,7 +362,7 @@ def role_firms(sentence: str) -> Dict[str, List[str]]:
                     best = (d, role)
         if best and name not in out[best[1]]:
             out[best[1]].append(name)
-    for role, pat in (("old", _OLD_OBJECT), ("new", _NEW_OBJECT)):
+    for role, pat in (("old", _OLD_OBJECT), ("new", _NEW_OBJECT_AFTER_FIRM), ("new", _NEW_OBJECT)):
         if not out[role]:
             m = pat.search(masked)
             if m:
@@ -370,12 +380,23 @@ def role_firms(sentence: str) -> Dict[str, List[str]]:
 _FORMER_CTX = re.compile(r"(?i:\breports?\s+(?:of|from|by)\b|disagree|\bletter\b|copy\s+of\s+(?:this|the)|provided\s+\S+\s+with)")
 
 
+def _first_word_name(sent: str) -> str:
+    m = re.match(r"\W*([A-Z][A-Za-z0-9&'’.+\-]*(?:\s+(?:&\s+)?[A-Z][A-Za-z0-9&'’.+\-]*){0,3})(?=\s*(?:,|;|\(|\s+(?:regarding|with\s+respect|concerning|on|as|of)\b))", sent)
+    return m.group(1).strip(" ,") if m else ""
+
+
 def _boilerplate_firm(sentences, ctx) -> str:
     counts: Dict[str, int] = {}
     for sent in sentences:
         if ctx is _FORMER_CTX and _CONSULT.search(sent):
             continue
         if ctx.search(sent):
+            if ctx is _CONSULT:
+                m = re.search(r"(?i:consult\w*\s+(?:with\s+)?)", sent)
+                sent = sent[m.end():] if m else sent  # "...preceding the engagement of OLD, the Company has not consulted with NEW": only NEW follows
+                for nm in extract_firms(sent)[:1] or ([_first_word_name(sent)] if _first_word_name(sent) else []):
+                    counts[nm] = counts.get(nm, 0) + 1
+                continue
             for name in extract_firms(sent):
                 counts[name] = counts.get(name, 0) + 1
     return max(counts, key=counts.get) if counts else ""

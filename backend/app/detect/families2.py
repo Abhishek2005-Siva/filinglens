@@ -15,7 +15,7 @@ import torch
 
 from . import agreements, rules302
 from . import context as ctxmod
-from .deal_text import deal_sentences, extract_amounts
+from .deal_text import charge_amount, deal_sentences, extract_amounts
 from .families import SECTION_CAP, DistressFamily, Family, _load
 from .items import find_item_section, list_headings, normalize_filing_text
 from ..dates import best_name, extract as extract_dates, window as date_window
@@ -206,6 +206,12 @@ class Acquisition(Family):
             k = max(range(5), key=p.__getitem__)
             if labels[k] != "NONE" and p[k] >= 0.5:
                 positives.append((p[k], s, labels[k]))
+        from_item = False
+        if not positives and sents:
+            # a filing that declares Item 2.01 reports a completed acquisition or sale: when no sentence clears the bar, show the sentence the reader found most deal-like
+            from_item = True
+            k_best = max(range(len(sents)), key=lambda i: 1 - probs[i][0])
+            positives.append((1 - probs[k_best][0], sents[k_best], "COMPLETED"))
         completed = bool(positives)
         res = {"key": self.key, "item": self.item, "title": self.title, "applicable": True, "experimental": self.experimental,
                "found": completed, "events": [], "readerNames": ["Sentence reader · RoBERTa-base", "Direction reader · RoBERTa-large"]}
@@ -227,6 +233,7 @@ class Acquisition(Family):
             res["events"].append({
                 "label": dl[dk], "title": self.ACQ_TITLES[dl[dk]], "confidence": round(dp[dk], 4),
                 "evidence": best[1], "detail": f"Largest amount mentioned: {_money(max(amounts))}" if amounts else "",
+                **({"fromItem": True} if from_item else {}),
                 "readers": [{"reader": "Direction reader · RoBERTa-large", "probability": round(dp[dk], 4)},
                             {"reader": "Sentence reader · RoBERTa-base (deal completed)", "probability": round(best[0], 4)}],
             })
@@ -375,6 +382,29 @@ def _guidance_sentences(text: str, context: int = 0) -> List[str]:
     return [_clip(sents[i]) for i in win]
 
 
+_G_NOUN = r"(?:guidance|outlook|forecast|expectations)"
+_G_VERBS = [
+    ("WITHDRAWN", r"withdr(?:aw|ew|awing|awn|aws)|suspend(?:s|ed|ing)?|no\s+longer\s+(?:provid\w+|expect\w*)"),
+    ("REAFFIRMED", r"reaffirm\w*|reiterat\w*|maintain\w*|confirm(?:s|ed|ing)?"),
+    ("LOWERED", r"lower(?:s|ed|ing)?|reduc(?:e|es|ed|ing)|cut(?:s|ting)?|trim\w*|decreas(?:e|es|ed|ing)"),
+    ("RAISED", r"rais(?:e|es|ed|ing)|increas(?:e|es|ed|ing)|boost\w*|hik(?:e|es|ed|ing)|improv(?:e|es|ed|ing)"),
+]
+_G_HEDGE = re.compile(r"(?i)\b(?:may|might|could|would|should|if|unless|whether|no\s+assurance|cannot|can\s?not|not\s+(?:provide|update|intend|undertake)|do(?:es)?\s+not|undertake\w*|obligation|forward-looking)\b")
+
+
+def stated_guidance_move(text: str):
+    """(label, sentence) when the release itself says it raised, lowered, reaffirmed or withdrew its guidance ('raising our 2025 Adjusted EBITDA guidance'),
+    else None. Hedged sentences ('may raise', 'we do not undertake to update') and forward-looking boilerplate do not count."""
+    sents = [x for x in _SENT_SPLIT.split(re.sub(r"\s+", " ", text).strip()) if x]
+    for label, verbs in _G_VERBS:
+        for sent in sents:
+            if _G_HEDGE.search(sent) or not re.search(_G_NOUN, sent, re.I):
+                continue
+            if re.search(rf"(?i)\b(?:{verbs})\b\s+(?:(?:also|further|again|its|our|the|full[- ]year|fiscal(?:\s+year)?|annual|\d{{4}})\s+){{1,4}}(?:[\w$%.\-]+\s+){{0,5}}?{_G_NOUN}|{_G_NOUN}[^.;]{{0,40}}\b(?:was|were|is|are|has\s+been|have\s+been)\s+(?:{verbs})", sent):
+                return label, _clip(sent)
+    return None
+
+
 class Guidance(Family):
     key, item, title = "guidance", "2.02", "Earnings guidance direction"
     models = ["guidance"]
@@ -405,6 +435,11 @@ class Guidance(Family):
         labels = ["NONE", "RAISED", "LOWERED", "REAFFIRMED", "WITHDRAWN"]
         k = max(range(5), key=p.__getitem__)
         events = []
+        said = stated_guidance_move(pr) if labels[k] == "NONE" else None
+        if said:
+            # the reader saw only the first 6,000 characters in a way that missed it: the release says in so many words what it did to its guidance
+            events.append({"label": said[0], "title": self.TITLES[said[0]], "confidence": None, "evidence": said[1], "source": "the press release's own words",
+                           "readers": [{"reader": "Wording rule", "probability": None}]})
         if labels[k] != "NONE":
             cands = _guidance_sentences(pr)
             events.append({"label": labels[k], "title": self.TITLES[labels[k]], "confidence": round(p[k], 4),
@@ -441,20 +476,26 @@ class Restructuring(Family):
         tok, model, _ = self._m
         labels = ["WORKFORCE_REDUCTION", "FACILITY_CLOSURE", "DIVESTITURE", "DISCONTINUED_PRODUCT", "IMPAIRMENT_ONLY", "OTHER"]
         events = []
+        also_206 = False
         for it, sec in secs.items():
             if not sec:
                 continue
             body = sec[:6000]
+            if it == "2.06" and secs.get("2.05") and len(body) < 400 and re.search(r"(?i)incorporated|set\s+forth|contained|described", body):
+                also_206 = True  # 'The information in Item 2.05 is incorporated into this Item 2.06': the same event, not a second one
+                continue
             p = _softmax_probs([body], tok, model, 512)[0]
             k = max(range(6), key=p.__getitem__)
-            amounts = extract_amounts(body)
+            amount = charge_amount(body)
             plain_body = re.sub(r"^\s*item\s*2\.0[56][^\n]*\n", "", body, flags=re.IGNORECASE)
             sents = [s for s in re.split(r"(?<=[.!?])\s+", re.sub(r"\s+", " ", plain_body)) if len(s) > 30]
             events.append({
                 "label": labels[k], "title": f"{self.TITLES[labels[k]]} (Item {it})", "confidence": round(p[k], 4),
                 "evidence": " ".join(sents[:2])[:600] if sents else None,
-                "detail": f"Largest amount mentioned: {_money(max(amounts))}" if amounts else "",
+                "detail": f"Charge mentioned: {_money(amount)}" if amount else "",
                 "readers": [{"reader": "Type reader · RoBERTa-large", "probability": round(p[k], 4)}],
             })
+        if also_206 and events:
+            events[0]["title"] = events[0]["title"].replace("(Item 2.05)", "(Items 2.05 and 2.06)")
         return {"key": self.key, "item": self.item, "title": self.title, "applicable": True, "experimental": self.experimental,
                 "found": bool(events), "events": events, "readerNames": ["RoBERTa-large type reader"], "seconds": round(time.time() - t0, 2)}

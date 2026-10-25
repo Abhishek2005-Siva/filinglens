@@ -118,6 +118,14 @@ class EquityV2(Equity):
         if not picked["types"]:                              # the filing reader sees no security: let the sentence readers decide
             return super().run(plain, tables, filing_date, **ctx)
         sec = sections["3.02"]
+        # an exemption the Item itself cites by name ("pursuant to Regulation S") is certain: add it when the filing reader stayed under its cut-off
+        name_map = {"4(a)(2)": "4A2", "REG_D": "REG_D", "REG_S": "REG_S", "3(a)(9)": "3A9", "3(a)(10)": "3A10"}
+        have = {x for x, _ in picked["exemptions"]}
+        for nm in rules302.extract_exemptions(sec):
+            x = name_map.get(nm)
+            if x and x not in have:
+                picked["exemptions"].append((x, max(0.5, probs[len(TYPES) + EXEMPTS.index(x)])))
+        picked["exemptions"].sort(key=lambda t: -t[1])
         # evidence sentence: the most confident sale sentence from the old sentence reader
         sents = deal_sentences(sec, "3.02")
         etok, emodel, _ = self._ev
