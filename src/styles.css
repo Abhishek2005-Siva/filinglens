@@ -613,3 +613,15 @@ td.empty { text-align: center; }
   .fb-row { grid-template-columns: 1fr; gap: 4px; } .fb-head { display: none; }
   .month { height: 20px; }
 }
+
+/* ---- sheet: pick which events to show (scoped so the other chips and segmented controls keep their look) ---- */
+.event-filter { margin: 10px 0 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); display: grid; gap: 10px; }
+.event-filter-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.event-filter .chips { gap: 8px; }
+.event-filter .chip { font-size: .84rem; padding: 5px 12px; }
+.event-filter .chip small { color: var(--muted); margin-left: 4px; font-variant-numeric: tabular-nums; }
+.event-filter .chip:disabled { opacity: .45; cursor: default; }
+.event-filter .seg button { padding: 4px 12px; font-size: .82rem; }
+.event-filter .chip:focus-visible, .event-filter .seg button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.check-select { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: .84rem; color: var(--muted); }
+.check-select select { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
