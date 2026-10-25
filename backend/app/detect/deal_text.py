@@ -34,7 +34,7 @@ _AMOUNT_RE = re.compile(r"(?:US\s?)?\$\s?(\d[\d,]*(?:\.\d+)?)\s*(million|billion
 _MULT = {"billion": 1e9, "b": 1e9, "million": 1e6, "m": 1e6, "thousand": 1e3, "k": 1e3}
 
 
-_UNIT_AFTER = re.compile(r"(?i)^[^.;]{0,30}?\b(?:per|a|each)\s+(?:common\s+|ordinary\s+|class\s+\w\s+)?(?:share|unit|warrant|ads|ordinary|note|security|bond|right)\b|^\s*/\s*(?:share|unit)")
+_UNIT_AFTER = re.compile(r"(?i)^[^.;]{0,30}?\b(?:per|a|each)\s+(?:common\s+|ordinary\s+|whole\s+|class\s+\w\s+)?(?:share|unit|warrant|ads|ordinary|note|security|bond|right)\b|^\s*/\s*(?:share|unit)")
 _UNIT_BEFORE = re.compile(r"(?i)(?:par\s+value|stated\s+value|exercise\s+price|conversion\s+price|price)\s+(?:of\s+|per\s+\w+\s+(?:of\s+)?|is\s+|was\s+)?(?:approximately\s+|up\s+to\s+)?(?:US\s?)?$")
 
 
