@@ -19,6 +19,8 @@ function Event({ e }: { e: DetectorEvent }) {
         {e.kind && <span className={`kind k-${e.kind}`} aria-hidden="true">{e.kind === 'appointed' ? '＋' : '−'}</span>}
         <b>{e.title}</b>
         {e.confidence != null && <span className="pill v-correct">{pct(e.confidence, 1)} sure</span>}
+        {e.flag === 'likely_wrong' && <span className="pill warn">Probably wrong</span>}
+        {e.flag === 'review' && <span className="pill review">Needs review</span>}
         {e.source && <span className="pill src">{e.source}</span>}
       </div>
       {e.kind && (

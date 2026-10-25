@@ -86,6 +86,8 @@ export interface Extraction {
   votesFor?: number
   readers?: ReaderVote[]
   check?: ResultCheck | null // the result checker's second opinion (absent when the checker is not running)
+  names?: string[] | null // several people appointed together (Co-CEOs): all of them (name is the first)
+  fromRule?: boolean // found by a rule (a list of officers, 'sole CEO') and not by the AI reader
   staysAs?: string | null // CEO leaving: the role the person keeps with the company, when the filing names one
   staysKind?: 'role' | 'board' | null // CEO leaving: the trained reader says the person stays with the company (another role, or only on the board)
   staysProb?: number | null
@@ -116,6 +118,7 @@ export interface DetectorEvent {
   kind?: 'appointed' | 'resigned'
   name?: string | null
   interim?: boolean
+  flag?: 'review' | 'likely_wrong' | null // CFO events: a rule doubts the answer (a repeat of an earlier announcement, a deputy role ...)
   effective?: string | null
   effectiveNote?: string | null
   decided?: string | null
@@ -213,7 +216,7 @@ export interface SlimEvent {
 export interface SlimResult {
   filing: { items: string[] }
   item502Found: boolean
-  appointed: Pick<Extraction, 'found' | 'name' | 'confidence' | 'sentence' | 'effective' | 'effectiveNote' | 'decided' | 'check' | 'staysAs' | 'staysKind' | 'coCeo'>
-  resigned: Pick<Extraction, 'found' | 'name' | 'confidence' | 'sentence' | 'effective' | 'effectiveNote' | 'decided' | 'check' | 'staysAs' | 'staysKind' | 'coCeo'>
+  appointed: Pick<Extraction, 'found' | 'name' | 'confidence' | 'sentence' | 'effective' | 'effectiveNote' | 'decided' | 'check' | 'staysAs' | 'staysKind' | 'coCeo' | 'names'>
+  resigned: Pick<Extraction, 'found' | 'name' | 'confidence' | 'sentence' | 'effective' | 'effectiveNote' | 'decided' | 'check' | 'staysAs' | 'staysKind' | 'coCeo' | 'names'>
   detectors?: { key: string; applicable: boolean; found: boolean; events: SlimEvent[] }[]
 }

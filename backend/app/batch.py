@@ -30,6 +30,10 @@ def slim(result: dict) -> dict:
         out = {k: e[k] for k in ("found", "name", "confidence", "effective", "effectiveNote", "decided") if e.get(k) is not None or k in ("found",)}
         if e.get("sentence"):
             out["sentence"] = str(e["sentence"])[:600]
+        if e.get("names"):
+            out["names"] = [str(n)[:60] for n in e["names"]][:6]
+        if e.get("fromRule"):
+            out["fromRule"] = True
         if e.get("staysAs"):
             out["staysAs"] = str(e["staysAs"])[:90]
         if e.get("staysKind"):

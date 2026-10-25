@@ -20,6 +20,7 @@ import torch
 
 from . import checker as checkmod
 from . import stays as staysmod
+from .appointees import co_names, complete_name, interim_of_new_role, repeats_earlier_announcement, rule_appointments, sub_unit_title, successor_pair
 from .roles import stays_as
 from .detect import context as ctxmod
 from .detect import rules
@@ -154,6 +155,23 @@ class Ensemble:
                 check = {"score": None, "state": "likely_wrong", "reason": "No sentence in this section is about a change of CEO.", "repointed": False}
             if found and idx is not None:
                 shown[idx] = {"reader": READER, "label": key.upper(), "confidence": round(p, 4), "counts": True}
+            if found and evidence and key == "appointed":
+                sp = successor_pair(evidence)
+                if sp and name and _same_person(name, sp[1]):
+                    name = sp[0]  # "X succeeded Y as CEO": the new CEO is X, not the person who left
+                notes = []
+                if sub_unit_title(evidence):
+                    notes.append(("likely_wrong", "The role is head of a business unit or subsidiary, not the company."))
+                elif repeats_earlier_announcement(evidence):
+                    notes.append(("review", "This repeats an appointment announced in an earlier filing, or gives only its pay terms."))
+                if notes and (check is None or check.get("state") in (None, "ok") or (notes[0][0] == "likely_wrong" and check.get("state") == "review")):
+                    check = {"score": (check or {}).get("score"), "state": notes[0][0], "reason": notes[0][1], "repointed": bool((check or {}).get("repointed"))}
+            co_names_list = None
+            if found and evidence and key == "appointed":
+                cn = [complete_name(n, section) if len(n.split()) == 1 else n for n in co_names(evidence)]
+                co_names_list = cn or None  # several people appointed together (Co-CEOs): all of them
+                if cn and not name:
+                    name = cn[0]
             stay_role, stay_kind, stay_prob = None, None, None
             if found and evidence and key == "resigned":
                 stay_role = stays_as(sentences, idx, name)  # the rule finder: the role named in the text (precise, finds about 1 in 7)
@@ -174,7 +192,8 @@ class Ensemble:
                 "sentenceIndex": idx if found else None,
                 "confidence": round(p, 4) if found else None,
                 "votesFor": 1 if found else 0,
-                "interim": bool(found and evidence and re.search(r"(?i)\b(?:interim|acting)\b", evidence)),
+                "interim": bool(found and evidence and (interim_of_new_role(evidence, name) if key == "appointed" else re.search(r"(?i)\b(?:interim|acting)\b", evidence))),
+                "names": co_names_list,
                 "effective": when["effective"],  # ISO date the change takes effect, when the filing says
                 "effectiveNote": when["effectiveNote"],  # "immediately" or "upon ..." when there is no calendar date
                 "decided": when["decided"],  # the date the board acted or the person gave notice, when stated
@@ -193,6 +212,16 @@ class Ensemble:
                     e["check"] = {"score": None, "state": "review", "reason": "The same person is named as joining and leaving.", "repointed": False}
                 elif e["check"]["state"] == "ok":
                     e["check"] = {**e["check"], "state": "review", "reason": "The same person is named as joining and leaving."}
+        if not result["appointed"]["found"]:
+            # appointments written as a list of officers, or "X began serving as the Company's sole CEO": the readers do not see these, rules do
+            ra = [r for r in rule_appointments(section) if r[0] == "CEO"]
+            if ra:
+                _role, nm, ev_text = ra[0]
+                result["appointed"].update({
+                    "found": True, "name": nm, "sentence": ev_text, "sentenceIndex": None, "confidence": None, "votesFor": 0, "interim": False, "names": None,
+                    "check": {"score": None, "state": "review", "reason": "Found by a rule in a list of officers or a 'sole CEO' sentence, not by the AI reader: please check.", "repointed": False},
+                    "fromRule": True,
+                })
         rows = [{"text": s, "readers": [shown[i]] if i in shown else []} for i, s in enumerate(sentences)]
         needs_review = any(result[k]["found"] and (result[k]["check"] or {}).get("state") in ("review", "likely_wrong") for k in ("appointed", "resigned"))
         return {"sentences": rows, **result, "needsReview": needs_review, "probabilities": {l: round(float(p), 4) for l, p in zip(LABELS, probs)}}

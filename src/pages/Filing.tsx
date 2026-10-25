@@ -25,7 +25,7 @@ function Panel({ kind, ex }: { kind: 'appointed' | 'resigned'; ex: Extraction })
       {ex.found && (
         <>
           <dl className="facts">
-            <div><dt>Person</dt><dd>{ex.name || 'Not named in the sentence'}</dd></div>
+            <div><dt>{ex.names && ex.names.length > 1 ? 'People' : 'Person'}</dt><dd>{ex.names && ex.names.length > 1 ? ex.names.join(', ') : ex.name || 'Not named in the sentence'}</dd></div>
             {(ex.staysAs || ex.staysKind) && (
               <div><dt>Stays with the company</dt><dd>{ex.staysAs ? `As ${ex.staysAs}` : ex.staysKind === 'board' ? 'Yes, on the board' : 'Yes, in another role (for example chair, advisor or employee)'}</dd></div>
             )}

@@ -19,11 +19,24 @@ from .deal_text import deal_sentences, extract_amounts
 from .families import SECTION_CAP, DistressFamily, Family, _load
 from .items import find_item_section, list_headings, normalize_filing_text
 from ..dates import best_name, extract as extract_dates, window as date_window
+from ..appointees import interim_of_new_role, not_a_cfo_appointment, repeats_earlier_announcement, rule_appointments, successor_pair
 from ..people import _APPOINT, _LEAVE, pick_name, pick_name_from_sentences
 from .labelers201 import mark_self, self_aliases
 from .deal_text import strip_caption
 
 MAX_SECTION = 20000
+
+_SUCCESSOR = re.compile(r"(?:transition\s+to|succeeded\s+by|replaced\s+by|hand(?:ing)?\s*over\s+to|will\s+be\s+succeeded\s+by)\s+(?:(?:Mr|Ms|Mrs|Dr)\.\s+)?((?:[A-Z][\w'’\-]+\.?\s+){1,2}[A-Z][\w'’\-]+)")
+_REMOVED = re.compile(r"(?i)removed\s+(?:him|her|them)\s+from|\bwill\s+(?:resign|retire|step\s+down)\b|\b(?:resigned|retired|departed|stepped\s+down)\b")
+
+
+def _toks(n: Optional[str]) -> set:
+    return {w for w in re.sub(r"[^a-z' \-]", " ", (n or "").lower()).split() if len(w) > 1 and w not in ("mr", "ms", "mrs", "dr", "jr", "sr")}
+
+
+def _same_person(a: Optional[str], b: Optional[str]) -> bool:
+    ta, tb = _toks(a), _toks(b)
+    return bool(ta and tb and (ta <= tb or tb <= ta))
 
 
 def _softmax_probs(texts: List[str], tok, model, max_length: int, batch: int = 16) -> List[List[float]]:
@@ -84,7 +97,7 @@ class CFO(DistressFamily):
                 evidence = next((x for x in cfo_sents if verb.search(x)), cfo_sents[0] if cfo_sents else None)
                 ev["evidence"] = evidence
             name = fields.get(f"{kind}_name") or (pick_name(evidence, kind, section) if evidence else None) or pick_name_from_sentences(cfo_sents, kind, section)
-            interim = bool(fields.get(f"{kind}_interim"))
+            interim = interim_of_new_role(evidence or "", name or "") if kind == "appointed" else bool(fields.get(f"{kind}_interim"))
             idx = all_sents.index(evidence) if evidence in all_sents else None
             when = extract_dates(evidence, name, [s for s in all_sents[max(0, (idx or 0) - 2):(idx or 0) + 3] if s != evidence] if idx is not None else all_sents[:6], role="CFO", kind=kind, context=date_window(all_sents, idx))
             name = best_name(when.get("name"), name, section) or name  # the trained tagger's name beats the patterns (97% vs 84% held-out)
@@ -92,6 +105,56 @@ class CFO(DistressFamily):
                 "kind": kind, "name": name, "interim": interim, "effective": when["effective"], "effectiveNote": when["effectiveNote"], "decided": when["decided"],
                 "title": ("New interim CFO named" if interim else "New CFO named") if kind == "appointed" else ("Interim CFO leaving" if interim else "CFO leaving"),
             })
+        # The appointee can be the wrong person: the sentence that announces a departure also names the successor in a later clause
+        # ("... a smooth transition to Casey Mueller, who will serve as interim CFO"), or the first CFO sentence is about a CEO promotion that
+        # removes the person from the CFO job. Look for the successor / a different appointment sentence before accepting the name.
+        leaving = next((e.get("name") for e in res["events"] if e.get("kind") == "resigned"), None)
+        for ev in res["events"]:
+            if ev.get("kind") != "appointed":
+                continue
+            ev_text = ev.get("evidence") or ""
+            if not ((leaving and _same_person(ev.get("name"), leaving)) or re.search(r"(?i)removed\s+(?:him|her|them)\s+from", ev_text)):
+                continue
+            swap = None
+            for x in cfo_sents:  # 1) a successor named inside a departure sentence
+                m = _SUCCESSOR.search(x)
+                if m and not _same_person(m.group(1), leaving) and not _same_person(m.group(1), ev.get("name")):
+                    swap = (x, m.group(1))
+                    break
+            if swap is None:  # 2) another sentence that appoints somebody else as CFO
+                for x in cfo_sents:
+                    if x == ev_text or _REMOVED.search(x) or not _APPOINT.search(x):
+                        continue
+                    nm = pick_name(x, "appointed", section)
+                    if nm and not _same_person(nm, leaving) and not _same_person(nm, ev.get("name")):
+                        swap = (x, nm)
+                        break
+            if swap:
+                x, nm = swap
+                i2 = all_sents.index(x) if x in all_sents else None
+                w2 = extract_dates(x, nm, [t for t in all_sents[max(0, (i2 or 0) - 2):(i2 or 0) + 3] if t != x] if i2 is not None else all_sents[:6], role="CFO", kind="appointed", context=date_window(all_sents, i2))
+                nm = best_name(w2.get("name"), nm, section) or nm
+                itm = interim_of_new_role(x, nm)
+                ev.update({"evidence": x, "name": nm, "interim": itm, "effective": w2["effective"], "effectiveNote": w2["effectiveNote"], "decided": w2["decided"],
+                           "title": "New interim CFO named" if itm else "New CFO named"})
+        for ev in res["events"]:
+            if ev.get("kind") != "appointed":
+                continue
+            ev_text = ev.get("evidence") or ""
+            sp = successor_pair(ev_text)
+            if sp and ev.get("name") and _same_person(ev["name"], sp[1]):
+                ev["name"] = sp[0]  # "X succeeded Y as CFO": the new CFO is X
+            why = not_a_cfo_appointment(ev_text)
+            if why:
+                ev["flag"], ev["detail"] = "likely_wrong", why
+            elif repeats_earlier_announcement(ev_text):
+                ev["flag"], ev["detail"] = "review", "Repeats an appointment announced in an earlier filing, or gives only its pay terms."
+        if not any(e.get("kind") == "appointed" for e in res["events"]):
+            ra = [r for r in rule_appointments(section) if r[0] == "CFO"]
+            if ra:
+                _r, nm, ev_text = ra[0]
+                res["events"].append({"label": "CFO_APPOINTED", "title": "New CFO named", "confidence": None, "evidence": ev_text, "kind": "appointed", "name": nm, "interim": False,
+                                      "effective": None, "effectiveNote": None, "decided": None, "readers": [], "fromRule": True})
         res["fields"] = {}  # names, dates and the interim flag now live on each event
         return res
 

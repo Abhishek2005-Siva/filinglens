@@ -95,6 +95,14 @@ def find_item_section(text: str, item: str) -> Optional[str]:
     if sig and sig.start() < end:
         end = sig.start()
     section = text[start:end].strip()
+    if item == "5.02" and section:
+        # a short Item 5.02 that only points to another Item ("Item 8.01 under the caption ... is incorporated herein by reference"): add that text
+        from ..appointees import referenced_items
+
+        for ref in referenced_items(section):
+            extra = find_item_section(text, ref)
+            if extra:
+                section = section + "\n" + extra[:6000]
     return section or None
 
 
