@@ -26,7 +26,9 @@ function Panel({ kind, ex }: { kind: 'appointed' | 'resigned'; ex: Extraction })
         <>
           <dl className="facts">
             <div><dt>Person</dt><dd>{ex.name || 'Not named in the sentence'}</dd></div>
-            {ex.staysAs && <div><dt>Stays with the company</dt><dd>As {ex.staysAs}</dd></div>}
+            {(ex.staysAs || ex.staysKind) && (
+              <div><dt>Stays with the company</dt><dd>{ex.staysAs ? `As ${ex.staysAs}` : ex.staysKind === 'board' ? 'Yes, on the board' : 'Yes, in another role (for example chair, advisor or employee)'}</dd></div>
+            )}
             {ex.coCeo && <div><dt>Role</dt><dd>Co-CEO</dd></div>}
             {whenText(ex) && <div><dt>Effective</dt><dd>{whenText(ex)}</dd></div>}
             {ex.decided && <div><dt>{kind === 'resigned' ? 'Announced / notice' : 'Decided'}</dt><dd>{fmtDate(ex.decided)}</dd></div>}

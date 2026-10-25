@@ -291,11 +291,19 @@ def start_prewarm() -> None:
         except Exception:
             pass
 
+    def load_stays() -> None:
+        try:
+            from . import stays as stays_model
+
+            stays_model.reader()  # the "stays with the company?" reader loads with the others
+        except Exception:
+            pass
+
     def go() -> None:
         from concurrent.futures import ThreadPoolExecutor
 
         with ThreadPoolExecutor(max_workers=int(os.getenv("PREWARM_WORKERS", "3"))) as pool:
-            futures = [pool.submit(load_one, fam) for fam in REGISTRY] + [pool.submit(load_dates), pool.submit(load_checker)]
+            futures = [pool.submit(load_one, fam) for fam in REGISTRY] + [pool.submit(load_dates), pool.submit(load_checker), pool.submit(load_stays)]
             for f in futures:
                 f.result()
         _activity["t"] = time.time()  # all detectors are ready: the idle clock starts now

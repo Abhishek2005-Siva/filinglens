@@ -19,6 +19,7 @@ from typing import Callable, Dict, List, Optional
 import torch
 
 from . import checker as checkmod
+from . import stays as staysmod
 from .roles import stays_as
 from .detect import context as ctxmod
 from .detect import rules
@@ -153,6 +154,19 @@ class Ensemble:
                 check = {"score": None, "state": "likely_wrong", "reason": "No sentence in this section is about a change of CEO.", "repointed": False}
             if found and idx is not None:
                 shown[idx] = {"reader": READER, "label": key.upper(), "confidence": round(p, 4), "counts": True}
+            stay_role, stay_kind, stay_prob = None, None, None
+            if found and evidence and key == "resigned":
+                stay_role = stays_as(sentences, idx, name)  # the rule finder: the role named in the text (precise, finds about 1 in 7)
+                rd = staysmod.reader()
+                if rd is not None:
+                    pa, pb, pc = rd.probs(company, name, date_window(sentences, idx) if idx is not None else evidence)
+                    stay_prob = round(pb + pc, 4)
+                    if pb + pc >= staysmod.SHOW_AT:
+                        stay_kind = "role" if pb >= pc else "board"
+                    elif not stay_role:
+                        stay_role = None
+                    if pb + pc < 0.5:
+                        stay_role = None  # the trained reader says they leave: do not show a rule match
             result[key] = {
                 "found": found,
                 "name": name,
@@ -167,7 +181,9 @@ class Ensemble:
                 "readers": [{"reader": READER, "voted": found, "confidence": round(p, 4) if found else None}],
                 "check": check,  # the result checker's score, whether a better sentence was found, and "review" when it is not sure
                 # a CEO who gives up the CEO role but stays (Executive Chairman, CEO of a division, advisor): the role kept, when the filing names one
-                "staysAs": stays_as(sentences, idx, name) if (found and evidence and key == "resigned") else None,
+                "staysAs": stay_role,
+                "staysKind": stay_kind,
+                "staysProb": stay_prob,
                 "coCeo": bool(found and evidence and re.search(r"(?i)\bco-?\s?(?:chief\s+executive|ceo)", evidence)),
             }
         a_, r_ = result["appointed"], result["resigned"]

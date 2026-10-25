@@ -75,6 +75,11 @@ ceo2_hit = glob.glob("/kaggle/input/**/cl_hn_s42/adapter_config.json", recursive
 if ceo2_hit and glob.glob("/kaggle/input/**/cl_hn_s7/adapter_config.json", recursive=True):
     os.environ["CEO2_DIR"] = os.path.dirname(os.path.dirname(ceo2_hit[0]))
 print("main CEO model v2:", os.environ.get("CEO2_DIR", "not found (using the original single model)"), flush=True)
+# optional: the "stays with the company?" reader (two seeds); the `filinglens-stays` dataset holds the folders st_s1/ and st_s2/.
+stays_hit = glob.glob("/kaggle/input/**/st_s1/adapter_config.json", recursive=True)
+if stays_hit and glob.glob("/kaggle/input/**/st_s2/adapter_config.json", recursive=True):
+    os.environ["STAYS_DIR"] = os.path.dirname(os.path.dirname(stays_hit[0]))
+print("stays-with-the-company reader:", os.environ.get("STAYS_DIR", "not found (rules only)"), flush=True)
 os.environ["USE_GPU"] = "1"
 os.environ["TORCH_THREADS"] = str(os.cpu_count() or 4)
 os.environ["HF_HUB_DISABLE_XET"] = "1"

@@ -87,6 +87,8 @@ export interface Extraction {
   readers?: ReaderVote[]
   check?: ResultCheck | null // the result checker's second opinion (absent when the checker is not running)
   staysAs?: string | null // CEO leaving: the role the person keeps with the company, when the filing names one
+  staysKind?: 'role' | 'board' | null // CEO leaving: the trained reader says the person stays with the company (another role, or only on the board)
+  staysProb?: number | null
   coCeo?: boolean // the role is a Co-CEO role
 }
 
@@ -211,7 +213,7 @@ export interface SlimEvent {
 export interface SlimResult {
   filing: { items: string[] }
   item502Found: boolean
-  appointed: Pick<Extraction, 'found' | 'name' | 'confidence' | 'sentence' | 'effective' | 'effectiveNote' | 'decided' | 'check' | 'staysAs' | 'coCeo'>
-  resigned: Pick<Extraction, 'found' | 'name' | 'confidence' | 'sentence' | 'effective' | 'effectiveNote' | 'decided' | 'check' | 'staysAs' | 'coCeo'>
+  appointed: Pick<Extraction, 'found' | 'name' | 'confidence' | 'sentence' | 'effective' | 'effectiveNote' | 'decided' | 'check' | 'staysAs' | 'staysKind' | 'coCeo'>
+  resigned: Pick<Extraction, 'found' | 'name' | 'confidence' | 'sentence' | 'effective' | 'effectiveNote' | 'decided' | 'check' | 'staysAs' | 'staysKind' | 'coCeo'>
   detectors?: { key: string; applicable: boolean; found: boolean; events: SlimEvent[] }[]
 }

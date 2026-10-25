@@ -32,6 +32,8 @@ def slim(result: dict) -> dict:
             out["sentence"] = str(e["sentence"])[:600]
         if e.get("staysAs"):
             out["staysAs"] = str(e["staysAs"])[:90]
+        if e.get("staysKind"):
+            out["staysKind"] = e["staysKind"]
         if e.get("coCeo"):
             out["coCeo"] = True
         c = e.get("check")
