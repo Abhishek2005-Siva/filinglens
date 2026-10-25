@@ -584,3 +584,32 @@ td.empty { text-align: center; }
   .ascore-nums div { text-align: left; }
   .ascore-nums dt { max-width: none; }
 }
+
+/* ---- Under the hood: flow, fallbacks, metrics, data timeline ---- */
+.arch .arch-row { max-width: 760px; margin-top: 4px; }
+.fb { display: grid; gap: 0; padding: 6px 14px; }
+.fb-row { display: grid; grid-template-columns: 1.1fr 1.4fr 1.4fr; gap: 12px; padding: 10px 2px; border-bottom: 1px solid var(--border); align-items: center; font-size: .92rem; }
+.fb-row:last-child { border-bottom: 0; }
+.fb-head { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+.fb-tag { font-style: normal; font-size: .68rem; font-weight: 700; padding: 2px 7px; border-radius: 999px; margin-right: 6px; }
+.fb-tag.one { background: var(--green-soft); color: var(--green); } .fb-tag.two { background: var(--amber-soft); color: var(--amber); }
+.grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.metric h3 { margin: 0 0 4px; } .metric p { margin: 8px 0; font-size: .92rem; }
+.dotrow { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0; }
+.dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
+.dot.ok { background: var(--green); } .dot.bad { background: var(--red); } .dot.miss { border: 2px solid var(--red); background: transparent; }
+.f1 { display: grid; gap: 6px; margin: 10px 0; font-size: .92rem; }
+.months-fig { padding: 16px; margin: 0 0 14px; }
+.months { display: grid; grid-template-columns: repeat(45, minmax(0, 1fr)); gap: 2px; }
+.month { display: block; height: 26px; border-radius: 3px; background: var(--surface-2); }
+.month.train { background: var(--primary); opacity: .75; } .month.test { background: var(--amber); } .month.none { background: transparent; border: 1px dashed var(--border); }
+.months-axis { display: flex; justify-content: space-between; color: var(--muted); font-size: .74rem; margin-top: 4px; }
+.legend { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 0; margin: 12px 0 0; font-size: .85rem; }
+.legend .month { display: inline-block; width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; }
+.months-fig figcaption { margin-top: 10px; color: var(--muted); font-size: .88rem; }
+.checks { margin: 0; padding-left: 18px; display: grid; gap: 10px; font-size: .92rem; }
+@media (max-width: 760px) {
+  .grid-3 { grid-template-columns: 1fr; }
+  .fb-row { grid-template-columns: 1fr; gap: 4px; } .fb-head { display: none; }
+  .month { height: 20px; }
+}

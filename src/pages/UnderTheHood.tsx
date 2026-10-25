@@ -19,6 +19,42 @@ const Arrow = ({ label, down }: { label?: string; down?: boolean }) => (
   </div>
 )
 
+// A row of dots: green = right, red = false alarm, hollow = missed.
+function DotRow({ right, wrong = 0, missed = 0, label }: { right: number; wrong?: number; missed?: number; label: string }) {
+  return (
+    <div className="dotrow" role="img" aria-label={label}>
+      {Array.from({ length: right }, (_, i) => <i key={`r${i}`} className="dot ok" />)}
+      {Array.from({ length: wrong }, (_, i) => <i key={`w${i}`} className="dot bad" />)}
+      {Array.from({ length: missed }, (_, i) => <i key={`m${i}`} className="dot miss" />)}
+    </div>
+  )
+}
+
+// Months we collected filings for: trained on, kept back for testing, or not used.
+const HELD_OUT = ['2024-06', '2025-06', '2025-11', '2026-05']
+const TRAINED = new Set([
+  '2023-01', '2023-03', '2023-07', '2023-09', '2023-11', '2023-12',
+  ...Array.from({ length: 12 }, (_, i) => `2024-${String(i + 1).padStart(2, '0')}`),
+  ...Array.from({ length: 12 }, (_, i) => `2025-${String(i + 1).padStart(2, '0')}`),
+  '2026-01', '2026-02', '2026-04', '2026-06', '2026-07', '2026-08',
+])
+HELD_OUT.forEach((m) => TRAINED.delete(m))
+const MONTHS: string[] = []
+for (let y = 2023; y <= 2026; y++) for (let m = 1; m <= 12; m++) if (y < 2026 || m <= 9) MONTHS.push(`${y}-${String(m).padStart(2, '0')}`)
+
+const fallbacks = [
+  ['Reaching the AI server', 'Free Cloudflare tunnel', 'ngrok tunnel'],
+  ['Main CEO model', 'Two AI copies vote (newest)', 'The single original model'],
+  ['Name and dates', 'Trained reader (97% names)', 'Pattern rules (84% names)'],
+  ['Wrong sentence picked', 'Try the next-best sentences', 'Mark it “Needs review”'],
+  ['The checker is missing', 'Checker scores each answer', 'Answer shown without a score'],
+]
+
+const checkerGain = [
+  { label: 'Without the checker', sub: 'answers that were right', value: 0.856 },
+  { label: 'With the checker', sub: 'accepted answers that were right', value: 0.944, highlight: true },
+]
+
 const steps = [
   ['1', 'Get the filing', 'from the SEC'],
   ['2', 'Cut it into sections', 'called Items'],
@@ -107,6 +143,147 @@ export default function UnderTheHood() {
         </ol>
       </section>
 
+      <section aria-labelledby="h-flow">
+        <h2 id="h-flow">How a CEO answer is made</h2>
+        <figure className="arch card">
+          <Node icon="📄" title="The filing" sub="an 8-K from the SEC" tone="blue" />
+          <Arrow down label="cut out Item 5.02" />
+          <Node icon="✂" title="Leadership section" sub="no CEO or president in it? Stop: nothing to find" tone="blue" />
+          <Arrow down label="first try" />
+          <Node icon="🧠" title="Main AI: two copies vote" sub="Is a new CEO named? Is the CEO leaving?" tone="green" />
+          <Arrow down label="show the proof" />
+          <Node icon="🔎" title="Pick the sentence, name and dates" sub="trained readers first, pattern rules as backup" tone="green" />
+          <Arrow down label="second look" />
+          <Node icon="✅" title="Checker AI" sub="Does this sentence really show a CEO change here? If not, try the next sentence." tone="violet" />
+          <Arrow down label="the answer is marked" />
+          <div className="arch-row">
+            <Node icon="✔" title="Accepted" sub="the checker agrees" tone="green" />
+            <Node icon="🚩" title="Needs review" sub="the checker is unsure: a person looks" tone="amber" />
+            <Node icon="⚠" title="Probably wrong" sub="no CEO sentence, or the checker doubts it a lot" tone="red" />
+          </div>
+          <figcaption>Nothing is deleted. Every answer keeps its sentence and a link to the filing.</figcaption>
+        </figure>
+      </section>
+
+      <section aria-labelledby="h-fallback">
+        <h2 id="h-fallback">First try, then the fallback</h2>
+        <div className="fb card">
+          <div className="fb-row fb-head"><span>Part</span><span>First try</span><span>If it fails</span></div>
+          {fallbacks.map(([part, first, back]) => (
+            <div className="fb-row" key={part}>
+              <b>{part}</b>
+              <span><i className="fb-tag one">1st</i> {first}</span>
+              <span><i className="fb-tag two">then</i> {back}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section aria-labelledby="h-metrics">
+        <h2 id="h-metrics">What the scores mean</h2>
+        <div className="grid-3">
+          <div className="card metric">
+            <h3>Precision</h3>
+            <p className="muted small">Of the alerts it raises, how many are real?</p>
+            <DotRow right={18} wrong={2} label="18 of 20 alerts are real" />
+            <p><b>18 of 20 = 90%.</b> Low precision means false alarms.</p>
+          </div>
+          <div className="card metric">
+            <h3>Recall</h3>
+            <p className="muted small">Of the real events, how many does it find?</p>
+            <DotRow right={19} missed={1} label="19 of 20 real events found" />
+            <p><b>19 of 20 = 95%.</b> Low recall means missed events.</p>
+          </div>
+          <div className="card metric">
+            <h3>F1</h3>
+            <p className="muted small">One number that is high only when both are high.</p>
+            <div className="f1">
+              <span><b>90%</b> and <b>95%</b> → <b>92%</b></span>
+              <span><b>100%</b> and <b>10%</b> → <b>18%</b></span>
+            </div>
+            <p><b>1.0 is perfect.</b> It cannot be tricked by saying “yes” to everything or “no” to everything.</p>
+          </div>
+        </div>
+        <p className="note">Plain accuracy would be misleading: only about 1 filing in 8 has a CEO change, so always answering “no” would be 87% accurate and useless.</p>
+        <div className="grid-2 tight">
+          <div>
+            <h3>New CEO named</h3>
+            <div className="card">
+              <BarChart bars={[
+                { label: 'Precision', sub: 'alerts that are real', value: 0.906 },
+                { label: 'Recall', sub: 'real events found', value: 0.983 },
+                { label: 'F1', sub: 'both together', value: 0.943, highlight: true },
+              ]} min={0.7} max={1} format={(v) => `${(v * 100).toFixed(1)}%`} ariaLabel="New CEO named: precision 90.6 percent, recall 98.3 percent, F1 94.3 percent" />
+            </div>
+          </div>
+          <div>
+            <h3>CEO leaving</h3>
+            <div className="card">
+              <BarChart bars={[
+                { label: 'Precision', sub: 'alerts that are real', value: 0.841 },
+                { label: 'Recall', sub: 'real events found', value: 0.917 },
+                { label: 'F1', sub: 'both together', value: 0.877, highlight: true },
+              ]} min={0.7} max={1} format={(v) => `${(v * 100).toFixed(1)}%`} ariaLabel="CEO leaving: precision 84.1 percent, recall 91.7 percent, F1 87.7 percent" />
+            </div>
+          </div>
+        </div>
+        <p className="note">These are scored per filing, on filings the AI never saw. “CEO leaving” is harder: departures are written in more different ways.</p>
+      </section>
+
+      <section aria-labelledby="h-data">
+        <h2 id="h-data">What it learned from, and what it was tested on</h2>
+        <figure className="card months-fig">
+          <div className="months" role="img" aria-label="Months of filings: most used for learning, four kept back for testing">
+            {MONTHS.map((m) => {
+              const kind = HELD_OUT.includes(m) ? 'test' : TRAINED.has(m) ? 'train' : 'none'
+              return <i key={m} className={`month ${kind}`} title={`${m}: ${kind === 'test' ? 'kept back for testing' : kind === 'train' ? 'used for learning' : 'not used'}`} />
+            })}
+          </div>
+          <div className="months-axis"><span>Jan 2023</span><span>Jan 2024</span><span>Jan 2025</span><span>Jan 2026</span></div>
+          <ul className="legend">
+            <li><i className="month train" /> Learned from</li>
+            <li><i className="month test" /> Kept back for testing: Jun 2024, Jun 2025, Nov 2025, May 2026</li>
+            <li><i className="month none" /> Not used (later used for extra real-world checks)</li>
+          </ul>
+          <figcaption>The AI never sees the four test months while learning, so the scores say how it does on new filings.</figcaption>
+        </figure>
+        <div className="grid-3">
+          <div className="card metric">
+            <h3>Main CEO AI</h3>
+            <p><b>Learned from</b> about 9,000 real filings. The answers (“labels”) came from two big AIs plus rules agreeing, then 239 doubtful labels were fixed, and 195 false-alarm filings were added.</p>
+            <p><b>Tested on</b> 1,070 filings from the 4 kept-back months. About 350 label disagreements were decided by hand.</p>
+          </div>
+          <div className="card metric">
+            <h3>Checker AI</h3>
+            <p><b>Learned from</b> about 7,000 short passages from the same learning months, marked “real change” or “not”.</p>
+            <p><b>Tested on</b> the same 4 kept-back months, plus 93 held-back filings the old model got wrong and 696 recent unseen filings.</p>
+          </div>
+          <div className="card metric">
+            <h3>Name and date readers</h3>
+            <p><b>Learned from</b> 4,600 passages whose names and dates were marked by a big AI.</p>
+            <p><b>Tested on</b> 589 passages from the 4 kept-back months. A big AI is not perfect: it agrees with itself only 91–95% of the time, so scores near that are close to the limit.</p>
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="h-checker">
+        <h2 id="h-checker">Does the checker help?</h2>
+        <div className="grid-2 tight">
+          <div className="card">
+            <BarChart bars={checkerGain} min={0.8} max={0.96} format={(v) => `${(v * 100).toFixed(1)}%`} ariaLabel="Share of shown answers that were right: 85.6 percent without the checker, 94.4 percent with it" />
+            <p className="note">On the 4 test months, the answers it accepts are right 94% of the time.</p>
+          </div>
+          <div className="card">
+            <ul className="checks">
+              <li><b>93 → 0</b> false alarms shown as accepted, on 92 held-back filings the old model got wrong (the newest AI still fires on 9, all marked “Probably wrong”).</li>
+              <li><b>2%</b> of answers left for a person to review (the goal was 3%).</li>
+              <li><b>2 to 4 in 10</b> answers on real recent filings (months the AI never trained on) had no CEO sentence at all with the old model. They are now marked “Probably wrong”.</li>
+            </ul>
+          </div>
+        </div>
+        <p className="note">Why it matters: our test filings are about half real events, but in real life only about 1 in 8 filings has a CEO change. False alarms hurt much more in real life than the test score shows. The checker is there for that.</p>
+      </section>
+
       <section aria-labelledby="h-finds">
         <h2 id="h-finds">What it finds</h2>
         <div className="agroups">
@@ -179,24 +356,26 @@ export default function UnderTheHood() {
           </div>
         </div>
         <div>
-          <h2>Finding the best CEO model</h2>
+          <h2>Older CEO models (per sentence)</h2>
           <div className="card">
             <BarChart bars={journey} min={0.8} max={0.875} ariaLabel="Overall score of each CEO model generation, rising from 0.8126 to 0.8673" />
           </div>
+          <p className="note">Earlier versions read one sentence at a time. Today’s model reads the whole section (scores above), so the two sets of numbers are not comparable.</p>
         </div>
       </section>
 
       <section aria-labelledby="h-next">
-        <h2 id="h-next">What is next <span className="pill exp">Planned</span></h2>
+        <h2 id="h-next">What is built, and what is next</h2>
         <ol className="aloop small">
-          <li><Node icon="🔎" title="Filter" sub="which filings have an event" tone="blue" /><Arrow /></li>
-          <li><Node icon="👀" title="Two readers" sub="trained model + LLM" tone="green" /><Arrow /></li>
-          <li><Node icon="✅" title="Checks" sub="text, dates, names" tone="violet" /><Arrow /></li>
+          <li><Node icon="🧠" title="Two AI copies vote" sub="live" tone="green" /><Arrow /></li>
+          <li><Node icon="✅" title="Checker" sub="live" tone="green" /><Arrow /></li>
           <li className="split">
-            <Node icon="✔" title="Agree: accept" tone="green" />
-            <Node icon="🚩" title="Disagree: review" tone="amber" />
+            <Node icon="✔" title="Accepted" sub="live" tone="green" />
+            <Node icon="🚩" title="Needs review / Probably wrong" sub="live" tone="amber" />
           </li>
+          <li><Arrow /><Node icon="📝" title="Review queue" sub="next: your decisions teach the AI" tone="blue" /></li>
         </ol>
+        <span className="pill exp">Next: a review queue that learns from your decisions</span>
       </section>
 
       <p className="note">AI can be wrong. Every answer shows the sentence it used and links to the SEC filing, so you can check it.</p>
