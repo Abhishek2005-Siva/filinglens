@@ -297,6 +297,28 @@ class Auditor(SentenceFamily):
         }
 
 
+_VOTE_TAIL = re.compile(r"(?i)[\s,;:.\-–]*(?:(?:was|were|is)\s+(?:approved|ratified|elected|adopted)\s*)?(?:,?\s*(?:by|with|based on|as|on)\s+(?:a\s+vote\s+of\s+(?:the\s+)?\w+\s+)?(?:the\s+)?(?:following\s+)?(?:votes?|results?|tabulation|table)[^.]*?|"
+                        r"received\s+the\s+following\s+votes|(?:as\s+)?follows|(?:is|are)\s+(?:as\s+)?(?:follows|set\s+forth\s+below)|The\s+(?:final\s+)?(?:voting\s+)?results?\b[^.]*?(?:follows|below))\s*:?\s*$")
+
+
+def _vote_title(desc: str) -> str:
+    """The proposal's own words: the last sentence before its table, without 'by the following vote:' and the like."""
+    d = re.sub(r"\s+", " ", desc).strip()
+    parts = [x.strip() for x in re.split(r"(?<=[.:])\s+(?=[A-Z0-9“\"(])|\s+\|\s+", d) if x.strip()]
+    for part in reversed(parts):
+        if not re.search(r"[A-Za-z]{3}", part):
+            continue  # '153,828,391 |'
+        cleaned = _VOTE_TAIL.sub("", part).strip(" ,;:.")
+        if len(cleaned) >= 20 and not re.fullmatch(r"(?i)(?:proposal\s*(?:no\.?)?\s*\d+|for|against|abstain|\d+)[.:]?", cleaned):
+            d = cleaned
+            break
+    if d[:1].islower() and " " in d:  # the stored description is cut at 200 characters, often mid-word
+        d = "…" + d[d.find(" ") + 1:]
+    if len(d) > 130:
+        d = d[:127].rsplit(" ", 1)[0] + "…"
+    return d
+
+
 class Votes(SentenceFamily):
     key, item, title = "votes", "5.07", "Shareholder vote results"
     source = "tables"
@@ -333,10 +355,7 @@ class Votes(SentenceFamily):
         votes = item507.parse_votes(section)
         rows_out = []
         for t in votes.get("tables", [])[:15]:
-            desc = re.sub(r"\s*The\s+(?:final\s+)?(?:voting\s+)?results?\b[^.]*?(?:follows|below)\s*:?\s*$", "", (t.get("desc") or "").strip(), flags=re.I).strip()
-            if len(desc) > 110:  # keep the end of the description, starting on a whole word
-                tail = desc[-110:]
-                desc = "…" + tail[tail.find(" ") + 1:]
+            desc = _vote_title(t.get("desc") or "")
             row = {"Proposal": desc if desc else ("Election of directors" if t.get("kind") == "directors" else "Pay-vote frequency" if t.get("kind") == "frequency" else "Proposal")}
             if t.get("kind") == "proposal":
                 row.update({"For": t.get("for"), "Against": t.get("against"), "Abstain": t.get("abstain"), "% for": t.get("pct_for"),

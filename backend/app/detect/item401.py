@@ -427,6 +427,8 @@ def aggregate(sentences: Sequence[str], per_sentence: Sequence[Dict[str, float]]
     }
     def first_firm(labels, role):
         for sent, scores in zip(sentences, per_sentence):
+            if role == "new" and re.search(r"(?i)remain(?:s|ed)?\s+engaged", sent):
+                continue  # 'Baker Tilly remains engaged to complete its audit' is the outgoing firm
             if any(scores.get(l, 0.0) >= thr(l) for l in labels):
                 found = role_firms(sent)[role]
                 if found:

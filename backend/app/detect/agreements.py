@@ -224,8 +224,9 @@ def _bad_party(name: str, company: str = "") -> bool:
     n = name.strip(" ,.").lower()
     if n in _NOT_COUNTERPARTY or len(n) < 3 or _NOT_A_PARTY.search(name):
         return True
-    toks = {t for t in re.findall(r"[a-z0-9]+", company.lower()) if len(t) > 2}
-    nt = {t for t in re.findall(r"[a-z0-9]+", n) if len(t) > 2}
+    drop = {"inc", "corp", "llc", "ltd", "company", "corporation", "holdings", "group", "the", "plc", "limited"}
+    toks = {t for t in re.findall(r"[a-z0-9]+", company.lower()) if len(t) > 2 and t not in drop}
+    nt = {t for t in re.findall(r"[a-z0-9]+", n) if len(t) > 2 and t not in drop}
     return bool(toks and nt and nt <= toks)  # the registrant itself
 
 

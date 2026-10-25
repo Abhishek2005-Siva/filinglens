@@ -53,7 +53,7 @@ def _softmax_probs(texts: List[str], tok, model, max_length: int, batch: int = 1
 
 
 def _money(v: float) -> str:
-    return f"${v / 1e9:.2f} billion" if v >= 1e9 else f"${v / 1e6:.1f} million" if v >= 1e6 else f"${v:,.0f}"
+    return f"${v / 1e9:.2f} billion" if v >= 1e9 else f"${v / 1e6:.1f} million" if v >= 1e6 else f"${v:,.2f}" if v < 1000 else f"${v:,.0f}"
 
 
 _INTRO_RE = re.compile(r"^[ \t]*(?:introductory|explanatory)\s+note", re.IGNORECASE | re.MULTILINE)
@@ -230,9 +230,10 @@ class Acquisition(Family):
             dk = max(range(4), key=dp.__getitem__)
             best = max(positives)
             amounts = extract_amounts(sec)
+            per_share = [] if amounts else extract_amounts(sec, per_unit=True)
             res["events"].append({
                 "label": dl[dk], "title": self.ACQ_TITLES[dl[dk]], "confidence": round(dp[dk], 4),
-                "evidence": best[1], "detail": f"Largest amount mentioned: {_money(max(amounts))}" if amounts else "",
+                "evidence": best[1], "detail": f"Largest amount mentioned: {_money(max(amounts))}" if amounts else (f"Price per share mentioned: {_money(max(per_share))}" if per_share else ""),
                 **({"fromItem": True} if from_item else {}),
                 "readers": [{"reader": "Direction reader · RoBERTa-large", "probability": round(dp[dk], 4)},
                             {"reader": "Sentence reader · RoBERTa-base (deal completed)", "probability": round(best[0], 4)}],
