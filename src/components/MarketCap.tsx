@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 
-interface Price { price?: number; priceDate?: string; daysOld?: number; trades?: number; accession?: string; marketCap: number | null; error?: string }
+interface Price { price?: number; priceDate?: string; daysOld?: number; trades?: number; accession?: string; marketCap: number | null; error?: string; source?: string }
 interface Cap {
   ticker: string
   shares: { value: number; classes: number; asOf: string; filed: string; form: string; accession: string } | null
   sec: Price
-  yahoo: Price
+  market: Price
   differencePct: number | null
 }
 
@@ -28,7 +28,7 @@ export default function MarketCap({ cik, date }: { cik: string; date: string }) 
     <section className="card mcap" aria-label="Market value">
       <h3>Market value on the filing date{d?.ticker ? ` (${d.ticker})` : ''}</h3>
       {err && <p className="muted small">Not available: {err}</p>}
-      {!d && !err && <p className="muted small">Working it out from SEC and Yahoo…</p>}
+      {!d && !err && <p className="muted small">Working it out from SEC filings and a price feed…</p>}
       {d && (
         <>
           <p className="muted small">
@@ -45,15 +45,15 @@ export default function MarketCap({ cik, date }: { cik: string; date: string }) 
                   <td>{d.sec.marketCap ? <b>{money(d.sec.marketCap)}</b> : '—'}</td>
                 </tr>
                 <tr>
-                  <td><b>Yahoo</b><div className="muted small">closing price</div></td>
-                  <td>{d.yahoo.price != null ? `$${d.yahoo.price}` : '—'}</td>
-                  <td>{d.yahoo.priceDate ?? <span className="muted small">{d.yahoo.error}</span>}</td>
-                  <td>{d.yahoo.marketCap ? <b>{money(d.yahoo.marketCap)}</b> : '—'}</td>
+                  <td><b>Closing price</b><div className="muted small">{d.market.source ?? 'price feed'}</div></td>
+                  <td>{d.market.price != null ? `$${d.market.price}` : '—'}</td>
+                  <td>{d.market.priceDate ?? <span className="muted small">{d.market.error}</span>}</td>
+                  <td>{d.market.marketCap ? <b>{money(d.market.marketCap)}</b> : '—'}</td>
                 </tr>
               </tbody>
             </table>
           </div>
-          {d.differencePct != null && <p className="muted small">The SEC-only value is {d.differencePct > 0 ? '+' : ''}{d.differencePct}% from the Yahoo value. Both use the same share count, so the gap is only the price.</p>}
+          {d.differencePct != null && <p className="muted small">The SEC-only value is {d.differencePct > 0 ? '+' : ''}{d.differencePct}% from the closing-price value. Both use the same share count, so the gap is only the price.</p>}
         </>
       )}
     </section>

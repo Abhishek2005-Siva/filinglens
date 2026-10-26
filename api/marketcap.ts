@@ -1,3 +1,4 @@
+import { get, put } from '@vercel/blob'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { requireAccess } from './_auth.js'
 import { UA, noDashes, one, padCik, secFetch } from './_sec.js'
@@ -5,7 +6,7 @@ import { UA, noDashes, one, padCik, secFetch } from './_sec.js'
 // Market value of a company on a date, worked out two ways so they can be compared:
 //   shares  = the cover-page share count from the company's latest 10-K / 10-Q filed on or before the date (SEC XBRL, dei:EntityCommonStockSharesOutstanding)
 //   method 1 (SEC only)  price = the latest priced insider trade (Form 4, open-market buy/sell or tax-withholding) in the 120 days up to the date
-//   method 2 (Yahoo)     price = the closing price on that day (or the last trading day before it) from Yahoo's chart data
+//   method 2 (licensed)  price = the closing price on that day (or the last trading day before it) from Tiingo (needs the free TIINGO_TOKEN key)
 // GET ?cik=320193&date=2025-02-10
 const DAY = 86_400_000
 const t = (ms = 9000) => AbortSignal.timeout(ms)
@@ -57,30 +58,32 @@ async function secPrice(cik: string, date: string) {
   return { ticker: j.tickers?.[0] ?? '', name: j.name ?? '', price: Math.round(price * 100) / 100, priceDate: day, daysOld: Math.round((Date.parse(date) - Date.parse(day)) / DAY), trades: same.length, accession: same[0].acc }
 }
 
-async function yahooPrice(ticker: string, date: string) {
-  if (!ticker) return { error: 'no ticker' }
-  const end = Math.floor((Date.parse(date) + 2 * DAY) / 1000)
-  const start = Math.floor((Date.parse(date) - 12 * DAY) / 1000)
-  let status = 0
-  for (const host of ['query1', 'query2']) {
-    try {
-      const r = await fetch(`https://${host}.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?period1=${start}&period2=${end}&interval=1d&events=split`, { headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36', Accept: 'application/json' }, signal: t() })
-      status = r.status
-      if (!r.ok) continue
-      const j = (await r.json()) as { chart?: { result?: { meta: { gmtoffset?: number }; timestamp?: number[]; indicators: { quote: { close: (number | null)[] }[] } }[] } }
-      const res = j.chart?.result?.[0]
-      if (!res?.timestamp) continue
-      const off = (res.meta.gmtoffset ?? 0) * 1000
-      let best: { d: string; c: number } | null = null
-      res.timestamp.forEach((ts, i) => {
-        const d = new Date(ts * 1000 + off).toISOString().slice(0, 10)
-        const c = res.indicators.quote[0].close[i]
-        if (c != null && d <= date && (!best || d > best.d)) best = { d, c }
-      })
-      if (best) return { price: Math.round((best as { c: number }).c * 100) / 100, priceDate: (best as { d: string }).d }
-    } catch { /* try the other host */ }
+/** Closing price from a licensed data provider (Tiingo, free key): the last trading day on or before the date. A past close never changes, so each
+ *  (ticker, date) is asked for once and then kept in the site's own storage. Yahoo is not used: it answers every automated request with HTTP 429. */
+async function closingPrice(ticker: string, date: string): Promise<{ price?: number; priceDate?: string; source?: string; cached?: boolean; error?: string }> {
+  if (!ticker) return { error: 'no ticker for this company' }
+  const key = process.env.TIINGO_TOKEN || ''
+  if (!key) return { error: 'No price-data key is set on the site yet (TIINGO_TOKEN).' }
+  const path = `prices/${ticker.toUpperCase().replace(/[^A-Z0-9.-]/g, '')}_${date}.json`
+  try {
+    const hit = await get(path, { access: 'private', useCache: false })
+    if (hit && hit.statusCode === 200) return { ...(JSON.parse(await new Response(hit.stream).text()) as { price: number; priceDate: string }), source: 'Tiingo', cached: true }
+  } catch { /* not stored yet, or storage not available */ }
+  const from = new Date(Date.parse(date) - 10 * DAY).toISOString().slice(0, 10)
+  try {
+    const r = await fetch(`https://api.tiingo.com/tiingo/daily/${encodeURIComponent(ticker)}/prices?startDate=${from}&endDate=${date}`, { headers: { Authorization: `Token ${key}`, 'Content-Type': 'application/json' }, signal: t() })
+    if (r.status === 404) return { error: 'Tiingo has no prices for this ticker (delisted or renamed?)' }
+    if (r.status === 429) return { error: 'Tiingo daily limit reached; try again later' }
+    if (!r.ok) return { error: `Tiingo answered HTTP ${r.status}` }
+    const rows = (await r.json()) as { date: string; close: number }[]
+    const best = rows.filter((x) => x.date.slice(0, 10) <= date && x.close > 0).sort((a, b) => b.date.localeCompare(a.date))[0]
+    if (!best) return { error: 'Tiingo returned no price for that date' }
+    const out = { price: Math.round(best.close * 100) / 100, priceDate: best.date.slice(0, 10) }
+    try { await put(path, JSON.stringify(out), { access: 'private', allowOverwrite: true, addRandomSuffix: false, contentType: 'application/json' }) } catch { /* the answer still counts */ }
+    return { ...out, source: 'Tiingo' }
+  } catch (e) {
+    return { error: `Tiingo could not be reached: ${String(e).slice(0, 80)}` }
   }
-  return { error: status === 429 ? 'Yahoo is refusing this server for now (HTTP 429, too many requests)' : status ? `Yahoo answered HTTP ${status} with no price for that date` : 'Yahoo returned no price for that date' }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -92,13 +95,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const [sh, sec] = await Promise.all([shares(cik, date), secPrice(cik, date)])
     const ticker = one(req.query.ticker) || ('ticker' in sec ? (sec.ticker as string) : '')
-    const yh = await yahooPrice(ticker, date)
+    const yh = await closingPrice(ticker, date)
     const cap = (p?: number) => (sh && p ? Math.round(sh.value * p) : null)
     const secCap = cap('price' in sec ? sec.price : undefined)
     const yhCap = cap('price' in yh ? yh.price : undefined)
     return res.status(200).json({
       cik, date, ticker, name: 'name' in sec ? sec.name : '',
-      shares: sh, sec: { ...sec, marketCap: secCap }, yahoo: { ...yh, marketCap: yhCap },
+      shares: sh, sec: { ...sec, marketCap: secCap }, market: { ...yh, marketCap: yhCap },
       differencePct: secCap && yhCap ? Math.round(((secCap - yhCap) / yhCap) * 10000) / 100 : null,
     })
   } catch (e) {
