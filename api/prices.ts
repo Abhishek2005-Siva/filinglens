@@ -8,15 +8,17 @@ import { requireAccess } from './_auth.js'
 //   GET  ?ticker=AAPL                                                                      -> what is stored (first date, last date, count)
 export const priceKey = (ticker: string) => `prices/yahoo_${ticker.toUpperCase().replace(/[^A-Z0-9.-]/g, '')}.json`
 
+const splitCsv = (line: string): string[] => (line.match(/("([^"]|"")*"|[^,]*)(,|$)/g) ?? []).map((x) => x.replace(/,$/, '').replace(/^"|"$/g, '').replace(/""/g, '"')).slice(0, -1)
+
 export function parseYahooCsv(csv: string): Record<string, number> {
   const lines = csv.replace(/^﻿/, '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
   if (lines.length < 2) return {}
-  const head = lines[0].split(',').map((h) => h.trim().toLowerCase())
+  const head = splitCsv(lines[0]).map((h) => h.trim().toLowerCase())
   const di = head.indexOf('date'), ci = head.indexOf('close')
   if (di < 0 || ci < 0) throw new Error('The file needs a "Date" column and a "Close" column (the file Yahoo gives you has both).')
   const out: Record<string, number> = {}
   for (const l of lines.slice(1, 6001)) {
-    const c = l.split(',')
+    const c = splitCsv(l)
     const raw = (c[di] || '').trim().replace(/"/g, '')
     const d = /^\d{4}-\d{2}-\d{2}/.test(raw) ? raw.slice(0, 10) : (() => { const t = Date.parse(raw); return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : '' })()
     const p = Number((c[ci] || '').replace(/[",$]/g, ''))
