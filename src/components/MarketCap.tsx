@@ -34,9 +34,22 @@ export default function MarketCap({ cik, date }: { cik: string; date: string }) 
   const asked = useRef('')
 
   const load = useCallback(async (): Promise<Cap | null> => {
-    const r = await fetch(`/api/marketcap?cik=${cik}&date=${date}`)
-    const b = await r.json()
-    if (!r.ok) throw new Error(b.message ?? 'failed')
+    const ask = async (extra: string) => {
+      const r = await fetch(`/api/marketcap?cik=${cik}&date=${date}${extra}`)
+      const text = await r.text()
+      let b: (Cap & { message?: string }) | null = null
+      try { b = JSON.parse(text) } catch { /* the server answered with an error page, not data (for example a time-out) */ }
+      if (!r.ok || !b) throw new Error(b?.message ?? 'the lookup took too long')
+      return b
+    }
+    let b: Cap
+    try {
+      b = await ask('')
+    } catch {
+      // the full lookup (which also searches insider trades) failed or timed out: the quick version still gives the Yahoo-based value
+      b = await ask('&light=1')
+      b.sec = { marketCap: null, error: 'The insider-trade search could not be completed.' }
+    }
     setD(b)
     return b
   }, [cik, date])

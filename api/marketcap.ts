@@ -46,18 +46,17 @@ async function secPrice(cik: string, date: string) {
     if (forms.length >= 10) break
   }
   const rows: { date: string; price: number; shares: number; code: string; acc: string }[] = []
-  for (const f of forms) {
-    try {
-      const x = await (await fetch(`https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${noDashes(f.acc)}/${f.doc}`, { headers: { 'User-Agent': UA }, signal: t() })).text()
-      for (const blk of x.match(/<nonDerivativeTransaction>[\s\S]*?<\/nonDerivativeTransaction>/g) ?? []) {
-        const d = /<transactionDate>\s*<value>([^<]+)/.exec(blk)?.[1]?.trim()
-        const p = Number(/<transactionPricePerShare>\s*<value>([^<]+)/.exec(blk)?.[1])
-        const sh = Number(/<transactionShares>\s*<value>([^<]+)/.exec(blk)?.[1]) || 0
-        const code = /<transactionCode>([^<]+)/.exec(blk)?.[1]?.trim() || ''
-        if (d && d <= date && d >= lo && p > 0 && ['P', 'S', 'F'].includes(code)) rows.push({ date: d, price: p, shares: sh, code, acc: f.acc })
-      }
-    } catch { /* one unreadable Form 4 is not fatal */ }
-  }
+  // the Form 4s are read side by side (they used to be read one after another, which could take over 30 seconds for a company with many insiders)
+  await Promise.allSettled(forms.map(async (f) => {
+    const x = await (await fetch(`https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${noDashes(f.acc)}/${f.doc}`, { headers: { 'User-Agent': UA }, signal: t(6000) })).text()
+    for (const blk of x.match(/<nonDerivativeTransaction>[\s\S]*?<\/nonDerivativeTransaction>/g) ?? []) {
+      const d = /<transactionDate>\s*<value>([^<]+)/.exec(blk)?.[1]?.trim()
+      const p = Number(/<transactionPricePerShare>\s*<value>([^<]+)/.exec(blk)?.[1])
+      const sh = Number(/<transactionShares>\s*<value>([^<]+)/.exec(blk)?.[1]) || 0
+      const code = /<transactionCode>([^<]+)/.exec(blk)?.[1]?.trim() || ''
+      if (d && d <= date && d >= lo && p > 0 && ['P', 'S', 'F'].includes(code)) rows.push({ date: d, price: p, shares: sh, code, acc: f.acc })
+    }
+  }))
   if (!rows.length) return { ticker: j.tickers?.[0] ?? '', name: j.name ?? '', error: 'no priced insider trade in the 120 days before the date' }
   const day = rows.reduce((a, b) => (b.date > a ? b.date : a), '')
   const same = rows.filter((r) => r.date === day)
@@ -102,7 +101,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const T = { start: Date.now(), shares: 0, sec: 0, price: 0, manual: 0 }
     const timed = async <X,>(k: 'shares' | 'sec', p: Promise<X>) => { const r = await p; T[k] = Date.now() - T.start; return r }
-    const [sh0, sec] = await Promise.all([timed('shares', shares(cik, date)), timed('sec', secPrice(cik, date))])
+    const [sh0, sec] = await Promise.all([timed('shares', shares(cik, date)), timed('sec', Promise.race([secPrice(cik, date), new Promise<{ error: string }>((r) => setTimeout(() => r({ error: 'The insider-trade search took too long; use the closing price.' }), 14_000))]))])
     const ticker = one(req.query.ticker) || ('ticker' in sec ? (sec.ticker as string) : '')
     const t1 = Date.now()
     const [yh0, man] = await Promise.all([closingPrice(ticker, date), manualFor(cik, date)])
