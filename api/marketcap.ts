@@ -2,7 +2,7 @@ import { get, put } from '@vercel/blob'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { requireAccess } from './_auth.js'
 import { manualFor } from './manual.js'
-import { importedPrices } from './prices.js'
+import { fresh, importedPrices } from './prices.js'
 import { UA, noDashes, one, padCik, secFetch } from './_sec.js'
 
 // Market value of a company on a date, worked out two ways so they can be compared:
@@ -75,7 +75,10 @@ async function closingPrice(ticker: string, date: string): Promise<{ price?: num
   const path = `prices/${ticker.toUpperCase().replace(/[^A-Z0-9.-]/g, '')}_${date}.json`
   try {
     const hit = await get(path, { access: 'private', useCache: false })
-    if (hit && hit.statusCode === 200) return { ...(JSON.parse(await new Response(hit.stream).text()) as { price: number; priceDate: string }), source: 'Tiingo', cached: true }
+    if (hit && hit.statusCode === 200) {
+      const c = JSON.parse(await new Response(hit.stream).text()) as { price: number; priceDate: string; at?: number }
+      if (fresh(c.at, c.priceDate)) return { price: c.price, priceDate: c.priceDate, source: 'Tiingo', cached: true } // older than the expiry: ask again
+    }
   } catch { /* not stored yet, or storage not available */ }
   const from = new Date(Date.parse(date) - 10 * DAY).toISOString().slice(0, 10)
   try {
@@ -86,9 +89,9 @@ async function closingPrice(ticker: string, date: string): Promise<{ price?: num
     const rows = (await r.json()) as { date: string; close: number }[]
     const best = rows.filter((x) => x.date.slice(0, 10) <= date && x.close > 0).sort((a, b) => b.date.localeCompare(a.date))[0]
     if (!best) return { error: 'Tiingo returned no price for that date' }
-    const out = { price: Math.round(best.close * 100) / 100, priceDate: best.date.slice(0, 10) }
+    const out = { price: Math.round(best.close * 100) / 100, priceDate: best.date.slice(0, 10), at: Date.now() }
     try { await put(path, JSON.stringify(out), { access: 'private', allowOverwrite: true, addRandomSuffix: false, contentType: 'application/json' }) } catch { /* the answer still counts */ }
-    return { ...out, source: 'Tiingo' }
+    return { price: out.price, priceDate: out.priceDate, source: 'Tiingo' }
   } catch (e) {
     return { error: `Tiingo could not be reached: ${String(e).slice(0, 80)}` }
   }

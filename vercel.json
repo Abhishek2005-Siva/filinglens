@@ -13,10 +13,12 @@
     "api/yahoo.ts": {
       "maxDuration": 60,
       "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
-    },
-    "api/yahoobulk.ts": {
-      "maxDuration": 60,
-      "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/prices?cleanup=1",
+      "schedule": "0 3 * * *"
+    }
+  ]
 }

@@ -125,7 +125,7 @@ export default function MarketCap({ cik, date }: { cik: string; date: string }) 
             </table>
           </div>
           {d.differencePct != null && <p className="muted small">The SEC-only value is {d.differencePct > 0 ? '+' : ''}{d.differencePct}% from the closing-price value. Both use the same share count, so the gap is only the price.</p>}
-          {d.market.source === 'Yahoo Finance' && <p className="muted small">Yahoo’s closing prices are adjusted for later stock splits, so for a company that split afterwards this price is not the one paid on that day.</p>}
+          {d.market.source === 'Yahoo Finance' && <p className="muted small">Yahoo’s closing prices are adjusted for later stock splits, so for a company that split afterwards this price is not the one paid on that day. Stored prices are used for 7 days (6 hours for the last 3 days), then read again.</p>}
           {needsHelp && !skipped && (
             <div className="mcap-manual" role="group" aria-label="Add the missing value">
               <p className="small"><b>Nothing found{missingPrice && yahooEmpty ? `: ${yahooEmpty}` : ''}.</b> You can type in the missing value, or leave it empty.</p>
