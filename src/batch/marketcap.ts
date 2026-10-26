@@ -27,18 +27,21 @@ async function pool<T, R>(items: T[], size: number, fn: (x: T) => Promise<R>, st
   return out
 }
 
-const light = (cik: string, date: string): Promise<Light | null> =>
-  fetch(`/api/marketcap?cik=${cik}&date=${date}&light=1`).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+const light = (cik: string, date: string, ticker = ''): Promise<Light | null> =>
+  fetch(`/api/marketcap?cik=${cik}&date=${date}&light=1${ticker ? `&ticker=${encodeURIComponent(ticker)}` : ''}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)
 
 /** Market cap for every filing of an analysis: shares from the SEC, the closing price from the stored Yahoo reads; companies without a stored price are read from
  *  Yahoo Finance in groups first. Companies where nothing is found stay empty (the filing page lets a person type the value in). */
 export async function fillMarketCaps(rows: Row[], onProgress: (text: string) => void, stop: () => boolean): Promise<Record<string, Cap>> {
   const keyOf = (r: Row) => `${String(r.CIK).replace(/^0+/, '')}|${String(r.Filed).slice(0, 10)}`
   const keys = [...new Set(rows.filter((r) => r.CIK && r.Filed && !String(r.Status).startsWith('Error')).map(keyOf))]
+  // the ticker the filing itself carried is better than today's (a renamed or delisted company has none today)
+  const tickerOfKey = new Map<string, string>()
+  for (const r of rows) { const t = String(r.Ticker || '').trim(); if (t && !tickerOfKey.has(keyOf(r))) tickerOfKey.set(keyOf(r), t) }
   const res = new Map<string, Light | null>()
   let n = 0
   onProgress(`Looking up share counts… 0 of ${keys.length}`)
-  await pool(keys, 6, async (k) => { const [cik, date] = k.split('|'); res.set(k, await light(cik, date)) }, stop, () => onProgress(`Looking up share counts… ${++n} of ${keys.length}`))
+  await pool(keys, 6, async (k) => { const [cik, date] = k.split('|'); res.set(k, await light(cik, date, tickerOfKey.get(k))) }, stop, () => onProgress(`Looking up share counts… ${++n} of ${keys.length}`))
 
   // companies that have a ticker but no stored price: read Yahoo's history page, a group at a time
   const need = keys.filter((k) => { const r = res.get(k); return r && r.ticker && r.shares && r.market.price == null && !r.market.marketCap })
@@ -58,7 +61,7 @@ export async function fillMarketCaps(rows: Row[], onProgress: (text: string) => 
   if (need.length && !stop()) {
     n = 0
     onProgress(`Calculating… 0 of ${need.length}`)
-    await pool(need, 6, async (k) => { const [cik, date] = k.split('|'); res.set(k, await light(cik, date)) }, stop, () => onProgress(`Calculating… ${++n} of ${need.length}`))
+    await pool(need, 6, async (k) => { const [cik, date] = k.split('|'); res.set(k, await light(cik, date, tickerOfKey.get(k))) }, stop, () => onProgress(`Calculating… ${++n} of ${need.length}`))
   }
 
   const out: Record<string, Cap> = {}
