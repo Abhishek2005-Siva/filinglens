@@ -38,7 +38,7 @@ export interface StartResult {
 }
 
 /** Calls that decide where the model server runs (which Kaggle account) and whether it is on. Open to every visitor. */
-export async function hostCall<T>(action: 'accounts' | 'start' | 'stop' | 'status' | 'progress', extra: Record<string, unknown> = {}): Promise<T> {
+export async function hostCall<T>(action: 'accounts' | 'start' | 'stop' | 'status' | 'progress' | 'running', extra: Record<string, unknown> = {}): Promise<T> {
   const r = await fetch('/api/host', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...extra }) })
   const body = await r.json().catch(() => ({}))
   if (!r.ok) throw new ApiError(body.error ?? 'error', body.message ?? `The request failed (${r.status}).`)

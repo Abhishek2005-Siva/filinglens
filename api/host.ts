@@ -53,6 +53,7 @@ interface AccountInfo {
   kernel: 'RUNNING' | 'QUEUED' | 'COMPLETE' | 'ERROR' | 'CANCELLED' | 'NONE'
   failureMessage?: string
   error?: string
+  partial?: boolean // Kaggle could not answer part of the questions (too many requests); the numbers may be missing, not zero
 }
 
 async function inspect(a: AccountDef): Promise<AccountInfo> {
@@ -86,6 +87,8 @@ async function inspect(a: AccountDef): Promise<AccountInfo> {
     out.authFailed = true
     out.error = 'Kaggle rejected this account’s token (it has probably expired).'
   }
+  // Kaggle limits how often it can be asked ('429 Too Many Requests'); a refused question is not the same as 'no GPU hours left' or 'files not uploaded'
+  if (!denied && [quota, ds].some((r) => r.status === 'rejected')) out.partial = true
   out.extras = EXTRA_DATASETS.filter((_, i) => ex[i]?.status === 'fulfilled' && (ex[i] as PromiseFulfilledResult<{ status?: string }>).value.status === 'READY')
   if (ker.status === 'fulfilled') {
     // An empty answer means the first state of the enum, QUEUED (proto3 leaves the default value out): the run is waiting for a free GPU.
@@ -93,6 +96,42 @@ async function inspect(a: AccountDef): Promise<AccountInfo> {
     out.failureMessage = ker.value.failureMessage || undefined
   }
   return out
+}
+
+// Every open page asks the site about the server, and the site asks Kaggle: remember the answers for a short while so many visitors cost Kaggle one
+// question, and when Kaggle refuses (429) keep showing the last good answer instead of claiming nothing is available.
+const seen = new Map<string, { t: number; info: AccountInfo; good: AccountInfo | null }>()
+const FRESH_MS = 30_000
+const STALE_MS = 15 * 60_000
+async function inspectCached(a: AccountDef, maxAge = FRESH_MS): Promise<AccountInfo> {
+  const hit = seen.get(a.id)
+  if (hit && Date.now() - hit.t < maxAge) return hit.info
+  const info = await inspect(a)
+  const good = info.partial || info.authFailed || !info.configured ? hit?.good ?? null : info
+  const usable = info.partial && good && Date.now() - (hit?.t ?? 0) < STALE_MS ? { ...good, kernel: info.kernel, failureMessage: info.failureMessage } : info
+  seen.set(a.id, { t: Date.now(), info: usable, good })
+  return usable
+}
+
+/** Only the question "is a server queued or running, and where?": one cheap Kaggle call per account, cached for 10 seconds. */
+async function runningOn(): Promise<string | null> {
+  const states = await Promise.all(ACCOUNTS.map(async (a) => {
+    const token = tokenOf(a)
+    if (!token) return null
+    const hit = seen.get(`run:${a.id}`)
+    if (hit && Date.now() - hit.t < 10_000) return hit.info.kernel === 'RUNNING' || hit.info.kernel === 'QUEUED' ? a.id : null
+    let kernel: AccountInfo['kernel'] = 'NONE'
+    try {
+      const st = await kaggle<{ status?: string }>(token, kernelsApi, 'GetKernelSessionStatus', { userName: a.id, kernelSlug: KERNEL_SLUG })
+      kernel = (st.status as AccountInfo['kernel']) ?? 'QUEUED'
+    } catch {
+      const old = seen.get(`run:${a.id}`)
+      kernel = old?.info.kernel ?? 'NONE' // Kaggle refused or failed: keep the last known state
+    }
+    seen.set(`run:${a.id}`, { t: Date.now(), info: { kernel } as AccountInfo, good: null })
+    return kernel === 'RUNNING' || kernel === 'QUEUED' ? a.id : null
+  }))
+  return states.find(Boolean) ?? null
 }
 
 const listFiles = (dir: string): string[] =>
@@ -201,7 +240,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await setModelUrl(url)
       return res.status(200).json({ ok: true })
     }
-    const infos = await Promise.all(ACCOUNTS.map(inspect))
+    if (body.action === 'running') return res.status(200).json({ running: await runningOn() })
+    const infos = await Promise.all(ACCOUNTS.map((a) => inspectCached(a, body.action === 'start' || body.action === 'stop' ? 0 : FRESH_MS)))
 
     if (body.action === 'accounts' || body.action === 'status') {
       const mu = await modelUrl()
@@ -210,7 +250,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         accounts: infos.filter((i) => i.configured && (eligible(i) || i.kernel === 'RUNNING' || i.kernel === 'QUEUED')),
         hidden: infos
           .filter((i) => !(i.configured && (eligible(i) || i.kernel === 'RUNNING' || i.kernel === 'QUEUED')))
-          .map((i) => ({ id: i.id, label: i.label, reason: !i.configured ? 'not configured' : i.authFailed ? 'its Kaggle token was rejected (probably expired): make a new token on Kaggle and update it on the site' : !i.adaptersReady ? 'model files not uploaded to this account yet' : i.remainingHours < MIN_HOURS ? 'out of GPU hours' : 'unavailable', remainingHours: i.remainingHours, refreshTime: i.refreshTime })),
+          .map((i) => ({ id: i.id, label: i.label, reason: !i.configured ? 'not configured' : i.authFailed ? 'its Kaggle token was rejected (probably expired): make a new token on Kaggle and update it on the site' : i.partial ? 'Kaggle is limiting how often it can be asked right now (too many requests); wait a minute and try again' : !i.adaptersReady ? 'model files not uploaded to this account yet' : i.remainingHours < MIN_HOURS ? 'out of GPU hours' : 'unavailable', remainingHours: i.remainingHours, refreshTime: i.refreshTime })),
         running: infos.find((i) => i.kernel === 'RUNNING' || i.kernel === 'QUEUED')?.id ?? null,
         defaultAccount: ACCOUNTS.find((a) => a.main)?.id ?? ACCOUNTS[0].id,
       })
@@ -253,7 +293,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const def = ACCOUNTS.find((a) => a.id === wanted)
       if (!info || !def) return res.status(400).json({ error: 'bad_request', message: 'Unknown account.' })
       if (!eligible(info)) {
-        const why = !info.configured ? 'it has no Kaggle token set up on the site' : info.authFailed ? 'its Kaggle token was rejected (probably expired)' : !info.adaptersReady ? 'the model files are not uploaded to it yet' : info.kernel === 'RUNNING' || info.kernel === 'QUEUED' ? 'a server is already running on it' : 'it is out of GPU hours'
+        const why = !info.configured ? 'it has no Kaggle token set up on the site' : info.authFailed ? 'its Kaggle token was rejected (probably expired)' : info.partial ? 'Kaggle is limiting how often it can be asked right now (too many requests), so its GPU hours and files could not be read; wait a minute and try again' : !info.adaptersReady ? 'the model files are not uploaded to it yet' : info.kernel === 'RUNNING' || info.kernel === 'QUEUED' ? 'a server is already running on it' : 'it is out of GPU hours'
         return res.status(409).json({ error: 'account_unavailable', message: `${info.label} cannot start the server right now: ${why}. Pick another account.`, account: wanted })
       }
       const runHours = Math.max(1, Math.min(Number(body.runHours) || DEFAULT_RUN_HOURS, Math.floor(info.remainingHours - 0.25)))

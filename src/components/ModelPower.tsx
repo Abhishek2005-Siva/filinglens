@@ -92,7 +92,7 @@ export default function ModelPower() {
     const look = async () => {
       if (gone || document.hidden || live.current) return
       try {
-        const d = await hostCall<{ running: string | null }>('status')
+        const d = await hostCall<{ running: string | null }>('running')
         if (gone || live.current) return
         if (!d.running) {
           // nobody has a server: a stale "on" badge from this browser's memory is wrong
@@ -106,7 +106,7 @@ export default function ModelPower() {
       } catch { /* leave the badge as it is */ }
     }
     void look()
-    const id = window.setInterval(() => void look(), 15000)
+    const id = window.setInterval(() => void look(), 20000)
     const onVisible = () => { if (!document.hidden) void look() }
     document.addEventListener('visibilitychange', onVisible)
     return () => { gone = true; window.clearInterval(id); document.removeEventListener('visibilitychange', onVisible) }
