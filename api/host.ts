@@ -104,7 +104,9 @@ async function inspect(a: AccountDef): Promise<AccountInfo> {
   const busy = (r: PromiseSettledResult<unknown>) => r.status === 'rejected' && /429|too many|resource.?exhausted/i.test(String((r.reason as { message?: string; status?: unknown })?.message ?? '') + String((r.reason as { status?: unknown })?.status ?? ''))
   if (!denied && busy(ds)) out.adaptersReady = true
   if (!denied && busy(quota)) { out.remainingHours = out.totalHours; out.error = undefined; out.unverified = true }
-  out.extras = EXTRA_DATASETS.filter((_, i) => ex[i]?.status === 'fulfilled' && (ex[i] as PromiseFulfilledResult<{ status?: string }>).value.status === 'READY')
+  // A dataset whose status Kaggle refused to give ('too many requests') is attached anyway: leaving it out silently starts the server without those models
+  // (the cyber reader, the filing readers for agreements and equity, the date finder, the result checker, ...), which is far worse than trying.
+  out.extras = EXTRA_DATASETS.filter((_, i) => (ex[i]?.status === 'fulfilled' && (ex[i] as PromiseFulfilledResult<{ status?: string }>).value.status === 'READY') || (!denied && busy(ex[i])))
   if (ker.status === 'fulfilled') {
     // An empty answer means the first state of the enum, QUEUED (proto3 leaves the default value out): the run is waiting for a free GPU.
     out.kernel = (ker.value.status as AccountInfo['kernel']) ?? 'QUEUED'

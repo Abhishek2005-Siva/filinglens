@@ -348,6 +348,41 @@ export default function UnderTheHood() {
         <p className="note">Every score comes from filings the model never saw while learning. F1 mixes “how often it is right” and “how many real events it finds” into one number (1.0 is perfect).</p>
       </section>
 
+      <section aria-labelledby="h-mcap">
+        <h2 id="h-mcap">How the market value is worked out</h2>
+        <p className="lead small">Market value on the filing date = shares outstanding × the closing price. No AI model is involved: the shares come from SEC data, the price from Yahoo Finance.</p>
+        <ol className="aloop small">
+          <li><Node icon="📄" title="Shares" sub="cover of the latest 10-K / 10-Q (SEC)" tone="blue" /><Arrow /></li>
+          <li><Node icon="📈" title="Price" sub="Yahoo Finance history page" tone="violet" /><Arrow /></li>
+          <li><Node icon="✍" title="If it fails" sub="type the value, or leave it empty" tone="amber" /><Arrow /></li>
+          <li><Node icon="💲" title="Market value" sub="shares × price" tone="green" /></li>
+        </ol>
+        <div className="grid-2 tight">
+          <div className="card">
+            <h3>Shares outstanding</h3>
+            <p className="small">From the SEC’s tagged data on the front page of the company’s latest 10-K or 10-Q filed on or before the filing date. A company with several share classes has them added up. The count is about 3 months old on average (86 days) because the cover is dated when the report was written.</p>
+          </div>
+          <div className="card">
+            <h3>Closing price</h3>
+            <p className="small">A headless browser opens Yahoo Finance’s public history page, presses “Accept all” if a cookie dialog shows, and reads the price table from the page Yahoo sends (scripts, style sheets, pictures and fonts are skipped). It takes the last close on or before the filing date. Yahoo has no public data service, so this reads the same page a person sees.</p>
+          </div>
+          <div className="card">
+            <h3>A second, SEC-only estimate</h3>
+            <p className="small">The price of the latest insider trade (Form 4) in the 120 days before the filing, shown next to the Yahoo value. It is found for about half of the filings and is a median 31 days old, so it is an estimate. Against the Yahoo close the median gap was 7.6%.</p>
+          </div>
+          <div className="card">
+            <h3>When nothing is found</h3>
+            <p className="small">If Yahoo shows no prices (a delisted or renamed company) or the SEC has no share count, the card says so. The person can type in the price or the share count, or choose “Leave empty”. Typed values are marked “entered by hand”, win over the automatic ones and can be removed.</p>
+          </div>
+        </div>
+        <ul className="afacts">
+          <li><b>2.6 s</b>median wait to read one company from Yahoo (it was 20 s before the page was slimmed down)</li>
+          <li><b>0.8 s</b>per company when many are read in one call</li>
+          <li><b>7 days</b>a stored price is used (6 hours for the last 3 days), then it is read again</li>
+        </ul>
+        <p className="note">Limits: Yahoo’s closing prices are adjusted for later stock splits, so for a company that split afterwards the price is not the one paid that day. Reading Yahoo’s pages by program is against Yahoo’s terms and the site’s server could be blocked after heavy use. Stored prices are deleted by a daily job. Full timings are in the Model notes.</p>
+      </section>
+
       <section aria-labelledby="h-names" className="grid-2 tight">
         <div>
           <h2 id="h-names">Reading names and dates</h2>
