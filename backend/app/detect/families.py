@@ -306,8 +306,8 @@ def _vote_title(desc: str) -> str:
     d = re.sub(r"\s+", " ", desc).strip()
     parts = [x.strip() for x in re.split(r"(?<=[.:])\s+(?=[A-Z0-9“\"(])|\s+\|\s+", d) if x.strip()]
     for part in reversed(parts):
-        if not re.search(r"[A-Za-z]{3}", part):
-            continue  # '153,828,391 |'
+        if not re.search(r"[A-Za-z]{3}", part) or re.match(r"(?i)(?:this\s+proposal|the\s+proposal\s+was|the\s+stockholders|the\s+shareholders|a\s+majority|the\s+results|there\s+were\s+no)", part):
+            continue  # '153,828,391 |' and 'This proposal was approved by the requisite vote'; the proposal's own wording comes earlier
         cleaned = _VOTE_TAIL.sub("", part).strip(" ,;:.")
         if len(cleaned) >= 20 and not re.fullmatch(r"(?i)(?:proposal\s*(?:no\.?)?\s*\d+|for|against|abstain|\d+)[.:]?", cleaned):
             d = cleaned
