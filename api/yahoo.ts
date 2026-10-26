@@ -42,13 +42,13 @@ export function parseCap(text: string | null): number | null {
   return n > 0 ? Math.round(n) : null
 }
 
-/** Today's market cap from the company's Yahoo quote page ("Market Cap (intraday)"), one tab. */
-async function readQuote(browser: Browser, ticker: string, until: number) {
+/** Today's market cap from the company's Yahoo quote page ("Market Cap (intraday)"), one tab. `light` skips scripts (faster); the caller retries with scripts if it finds nothing. */
+async function readQuote(browser: Browser, ticker: string, until: number, light = false) {
   const page = await browser.newPage()
   try {
-    await lean(page, false)
+    await lean(page, light)
     await page.goto(`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/`, { waitUntil: 'domcontentloaded', timeout: Math.max(5000, Math.min(25_000, until - Date.now())) })
-    await accept(page)
+    if (!light) await accept(page)
     const text = await page.evaluate(() => {
       const li = Array.from(document.querySelectorAll('li, tr')).find((e) => /^Market Cap/i.test((e.textContent || '').trim()))
       return li ? (li.textContent || '').replace(/^Market Cap\s*(\(intraday\))?/i, '').trim().slice(0, 30) : null
@@ -114,6 +114,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const until = t0 + DEADLINE_MS
   let browser: Browser | null = null
   try {
+    if (req.method === 'POST' && Array.isArray((req.body as { caps?: unknown } | undefined)?.caps)) {
+      // today's market cap for many tickers: one browser, a few tabs side by side
+      const body = req.body as { caps: string[]; tabs?: number }
+      const tickers = [...new Set(body.caps.map((x) => String(x || '').toUpperCase()).filter((x) => /^[A-Z0-9.-]{1,10}$/.test(x)))].slice(0, 40)
+      if (!tickers.length) return res.status(400).json({ error: 'bad_request', message: 'Send {caps:[ticker,…]}.' })
+      const tabs = Math.max(1, Math.min(5, Math.floor(body.tabs ?? 4)))
+      browser = await launch()
+      const out: { ticker: string; value: number | null; ms: number }[] = []
+      let next = 0
+      const worker = async (n: number) => {
+        await new Promise((r) => setTimeout(r, n * 300))
+        while (next < tickers.length && Date.now() < until - 8000) {
+          const tk = tickers[next++], ts = Date.now()
+          let q = await readQuote(browser!, tk, until, true).catch(() => null)
+          if (!q?.value && Date.now() < until - 12000) q = await readQuote(browser!, tk, until, false).catch(() => null)
+          out.push({ ticker: tk, value: q?.value ?? null, ms: Date.now() - ts })
+        }
+      }
+      await Promise.all(Array.from({ length: tabs }, (_, n) => worker(n)))
+      const done = new Set(out.map((o) => o.ticker))
+      return res.status(200).json({ results: out, remaining: tickers.filter((x) => !done.has(x)), asOf: new Date().toISOString(), ms: Date.now() - t0 })
+    }
     if (req.method === 'POST') {
       const body = (req.body ?? {}) as { items?: Item[]; tabs?: number }
       const items = (body.items ?? []).map((i) => ({ ticker: String(i.ticker || '').toUpperCase(), from: String(i.from), to: String(i.to) })).filter(valid).slice(0, 40)
@@ -149,8 +171,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     browser = await launch()
     const launchMs = Date.now() - t0
     if (one(req.query.caponly)) {
-      const q = await readQuote(browser, ticker, until).catch((e) => ({ text: null, value: null, error: String(e).slice(0, 120) }))
-      return res.status(200).json({ ok: !!q.value, ticker, currentMarketCap: q.value, shown: q.text, asOf: new Date().toISOString(), ms: Date.now() - t0, ...(q.value ? {} : { note: 'Yahoo’s quote page showed no market cap for this ticker.' }) })
+      let q = await readQuote(browser, ticker, until, true).catch(() => null)
+      if (!q?.value) q = await readQuote(browser, ticker, until, false).catch(() => null)
+      return res.status(200).json({ ok: !!q?.value, ticker, currentMarketCap: q?.value ?? null, shown: q?.text ?? null, asOf: new Date().toISOString(), ms: Date.now() - t0, ...(q?.value ? {} : { note: 'Yahoo’s quote page showed no market cap for this ticker.' }) })
     }
     const r = await read(browser, { ticker, from, to }, until)
     let marketCap: string | null = null

@@ -9,7 +9,7 @@ export const COLUMNS = [
   'CEO appointed', 'CEO leaving', 'CFO appointed', 'CFO leaving',
   'Bankruptcy', 'Delisting / listing notice', 'Auditor change', 'Shareholder votes',
   'Acquisition / sale', 'Material agreements', 'Unregistered equity sales', 'Earnings guidance', 'Restructuring / impairment',
-  'Market cap', 'Market cap note',
+  'Market cap', 'Market cap note', 'Market cap today',
   'Needs review', 'Top confidence', 'Evidence', 'SEC link', 'Accession', 'Status',
 ] as const
 

@@ -142,9 +142,11 @@ export default function MarketCap({ cik, date }: { cik: string; date: string }) 
               </tbody>
             </table>
           </div>
-          <p className="muted small">
-            Market cap today (Yahoo Finance, live): {now == null ? 'reading…' : now.value ? <b>{money(now.value)}</b> : (now.note ?? 'not shown')}. This is the current value, not the value on the filing date.
-          </p>
+          <div className="mcap-now" role="status">
+            <span className="mcap-now-label">Market cap today (Yahoo Finance, live)</span>
+            <span className="mcap-now-value">{now == null ? 'reading…' : now.value ? money(now.value) : (now.note ?? 'not shown')}</span>
+            <span className="muted small">The current value, not the value on the filing date.</span>
+          </div>
           {d.differencePct != null && <p className="muted small">The SEC-only value is {d.differencePct > 0 ? '+' : ''}{d.differencePct}% from the closing-price value. Both use the same share count, so the gap is only the price.</p>}
           {d.market.source === 'Yahoo Finance' && <p className="muted small">Yahoo’s closing prices are adjusted for later stock splits, so for a company that split afterwards this price is not the one paid on that day. Stored prices are used for 7 days (6 hours for the last 3 days), then read again.</p>}
           {needsHelp && !skipped && (

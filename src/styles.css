@@ -648,3 +648,7 @@ td.empty { text-align: center; }
 .mcap-panel-head, .mcap-panel-filter { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .mcap-panel-filter input { width: 110px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: inherit; }
 .mcap-panel-filter select { padding: 7px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-family: inherit; }
+
+.mcap-now { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin: 12px 0; padding: 12px 14px; border-radius: 12px; background: var(--primary-soft); border: 2px solid var(--primary); }
+.mcap-now-label { font-weight: 600; color: var(--primary); }
+.mcap-now-value { font-size: 1.6rem; font-weight: 800; color: var(--text); letter-spacing: -.01em; }

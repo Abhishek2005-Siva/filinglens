@@ -96,3 +96,37 @@ export async function fillMarketCaps(rows: Row[], onProgress: (text: string) => 
 
 export const fmtCap = (v: number) => (v >= 1e12 ? `$${(v / 1e12).toFixed(2)}T` : v >= 1e9 ? `$${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${v.toLocaleString('en-US')}`)
 export const UNITS: Record<string, number> = { thousand: 1e3, million: 1e6, billion: 1e9, trillion: 1e12 }
+
+/** Today's market cap (Yahoo's quote page, "Market Cap (intraday)") for every filing, one read per company. Needs only a ticker; it does not use the SEC or the filing date. */
+export async function fillTodayCaps(rows: Row[], onProgress: (text: string) => void, stop: () => boolean): Promise<Record<string, Cap>> {
+  const usable = rows.filter((r) => r.CIK && r.Filed && !String(r.Status).startsWith('Error'))
+  const tickerOfCik = new Map<string, string>()
+  for (const r of usable) { const t = String(r.Ticker || '').trim().toUpperCase(); if (t && !tickerOfCik.has(String(r.CIK))) tickerOfCik.set(String(r.CIK), t) }
+  // rows with no ticker: ask for the company's current one
+  const noTicker = [...new Set(usable.map((r) => String(r.CIK)).filter((c) => !tickerOfCik.has(c)))]
+  let n = 0
+  if (noTicker.length) {
+    onProgress(`Looking up tickers… 0 of ${noTicker.length}`)
+    const sample = new Map(usable.map((r) => [String(r.CIK), String(r.Filed).slice(0, 10)]))
+    await pool(noTicker, 6, async (c) => { const x = await light(c.replace(/^0+/, ''), sample.get(c)!); if (x?.ticker) tickerOfCik.set(c, x.ticker.toUpperCase()) }, stop, () => onProgress(`Looking up tickers… ${++n} of ${noTicker.length}`))
+  }
+  const tickers = [...new Set(tickerOfCik.values())]
+  const value = new Map<string, number | null>()
+  for (let i = 0; i < tickers.length && !stop(); i += 16) {
+    let list = tickers.slice(i, i + 16)
+    for (let attempt = 0; attempt < 3 && list.length && !stop(); attempt++) {
+      onProgress(`Reading today’s market cap from Yahoo Finance… ${value.size} of ${tickers.length}`)
+      const d = await fetch('/api/yahoo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ caps: list, tabs: 5 }) }).then((r) => r.json()).catch(() => null)
+      if (!d?.results) break
+      for (const x of d.results as { ticker: string; value: number | null }[]) value.set(x.ticker, x.value)
+      list = d.remaining as string[]
+    }
+  }
+  const out: Record<string, Cap> = {}
+  for (const r of rows) {
+    const t = tickerOfCik.get(String(r.CIK))
+    const v = t ? value.get(t) : undefined
+    out[String(r.Accession)] = v ? { cap: v, note: `${t} on Yahoo Finance, ${new Date().toISOString().slice(0, 10)}` } : { cap: null, note: !t ? 'No ticker for this company' : 'Yahoo showed no market cap' }
+  }
+  return out
+}
