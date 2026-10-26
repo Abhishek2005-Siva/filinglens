@@ -9,6 +9,10 @@
     },
     "api/marketcap.ts": {
       "maxDuration": 30
+    },
+    "api/yahoo.ts": {
+      "maxDuration": 60,
+      "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
     }
   }
 }

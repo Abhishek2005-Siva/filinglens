@@ -35,6 +35,13 @@ export async function importedPrices(ticker: string): Promise<Record<string, num
   return {}
 }
 
+/** Adds closes to what is stored for a ticker (newer values replace older ones for the same day). Returns the sorted list of stored days. */
+export async function storePrices(ticker: string, add: Record<string, number>): Promise<string[]> {
+  const rows = { ...(await importedPrices(ticker)), ...add }
+  await put(priceKey(ticker), JSON.stringify({ ticker: ticker.toUpperCase(), updated: new Date().toISOString(), rows }), { access: 'private', allowOverwrite: true, addRandomSuffix: false, contentType: 'application/json' })
+  return Object.keys(rows).sort()
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store')
   if (!requireAccess(req, res)) return
@@ -50,9 +57,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const add = parseYahooCsv(String((req.body ?? {}).csv ?? ''))
     const n = Object.keys(add).length
     if (!n) return res.status(400).json({ error: 'empty', message: 'No prices were found in that file.' })
-    const rows = { ...(await importedPrices(ticker)), ...add }
-    await put(priceKey(ticker), JSON.stringify({ ticker: ticker.toUpperCase(), updated: new Date().toISOString(), rows }), { access: 'private', allowOverwrite: true, addRandomSuffix: false, contentType: 'application/json' })
-    const days = Object.keys(rows).sort()
+    const days = await storePrices(ticker, add)
     return res.status(200).json({ ok: true, ticker: ticker.toUpperCase(), added: n, count: days.length, first: days[0], last: days[days.length - 1] })
   } catch (e) {
     return res.status(400).json({ error: 'bad_file', message: e instanceof Error ? e.message : 'Could not read that file.' })
