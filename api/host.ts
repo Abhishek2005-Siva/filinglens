@@ -53,6 +53,7 @@ interface AccountInfo {
   kernel: 'RUNNING' | 'QUEUED' | 'COMPLETE' | 'ERROR' | 'CANCELLED' | 'NONE'
   failureMessage?: string
   error?: string
+  unverified?: boolean // Kaggle was too busy to say how many GPU hours are left; remainingHours is a guess
   partial?: boolean // Kaggle could not answer part of the questions (too many requests); the numbers may be missing, not zero
 }
 
@@ -98,6 +99,11 @@ async function inspect(a: AccountDef): Promise<AccountInfo> {
   }
   // Kaggle limits how often it can be asked ('429 Too Many Requests'); a refused question is not the same as 'no GPU hours left' or 'files not uploaded'
   if (!denied && [quota, ds].some((r) => r.status === 'rejected')) out.partial = true
+  // When Kaggle only said 'too many requests', we do not know the numbers, which is different from 'no hours left': let the person try, and Kaggle itself
+  // will refuse a start that has no quota or no files.
+  const busy = (r: PromiseSettledResult<unknown>) => r.status === 'rejected' && /429|too many|resource.?exhausted/i.test(String((r.reason as { message?: string; status?: unknown })?.message ?? '') + String((r.reason as { status?: unknown })?.status ?? ''))
+  if (!denied && busy(ds)) out.adaptersReady = true
+  if (!denied && busy(quota)) { out.remainingHours = out.totalHours; out.error = undefined; out.unverified = true }
   out.extras = EXTRA_DATASETS.filter((_, i) => ex[i]?.status === 'fulfilled' && (ex[i] as PromiseFulfilledResult<{ status?: string }>).value.status === 'READY')
   if (ker.status === 'fulfilled') {
     // An empty answer means the first state of the enum, QUEUED (proto3 leaves the default value out): the run is waiting for a free GPU.

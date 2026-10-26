@@ -84,7 +84,7 @@ export default function StartPanel({ onClose, onStarted, onAlreadyRunning }: Pro
                       <input type="radio" name="acct" checked={pick === a.id} onChange={() => setPick(a.id)} />
                       <span className="acct-main">
                         <b>{a.label}</b>
-                        <small>{a.remainingHours.toFixed(1)} of {a.totalHours.toFixed(0)} GPU hours left this week</small>
+                        <small>{a.unverified ? 'GPU hours could not be checked just now (Kaggle is busy); you can still try to start it' : `${a.remainingHours.toFixed(1)} of ${a.totalHours.toFixed(0)} GPU hours left this week`}</small>
                         <span className="acct-bar" aria-hidden="true"><i style={{ width: `${pctUsed}%` }} /></span>
                       </span>
                     </label>

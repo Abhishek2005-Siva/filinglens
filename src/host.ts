@@ -11,6 +11,7 @@ export interface HostAccount {
   refreshTime: string
   kernel: 'RUNNING' | 'QUEUED' | 'COMPLETE' | 'ERROR' | 'CANCELLED' | 'NONE'
   failureMessage?: string
+  unverified?: boolean
 }
 
 export interface HostHidden {
