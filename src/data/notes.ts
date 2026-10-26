@@ -124,6 +124,19 @@ export const noteGroups: NoteGroup[] = [
         footnote: '38 of 40 single reads found prices. Opening more tabs in the full-page version made every page slower (the processor was the limit); with scripts off the pages are light enough for several tabs. If the light read finds no table (for example a cookie dialog that needs scripts), the same company is read once more with the full page, which is the slow case. A new company costs about 2.6 s for Yahoo plus about 1.4 s for the SEC data. Stored prices are used for 7 days (6 hours for the last 3 days) and then read again; a daily job deletes what has expired. Prices typed in by hand are not deleted.',
       },
       {
+        id: 'mcap-today-latency',
+        title: 'Market cap today (Yahoo quote page): how long it takes (measured on the live site)',
+        intro: 'Today\'s market cap = a headless browser opens the company\'s Yahoo quote page and reads the "Market Cap (intraday)" field, without scripts first (with scripts only if nothing is found). One company at a time is what the filing page does; the results sheet sends 16 companies per call with 5 tabs. Seconds as the person waits.',
+        columns: ['Test', 'Result'],
+        rows: [
+          ['One company, whole wait (10 companies)', 'median 1.9 s, fastest 1.6 s, slowest 4.3 s; value found for 10 of 10'],
+          ['16 companies in one call, 5 tabs', '11.0 s in total (0.69 s per company); found for 16 of 16'],
+          ['40 companies in one call, 5 tabs', '25.1 s in total (0.63 s per company); found for 39 of 40'],
+          ['A ticker Yahoo does not know', '9.2 s (the light read finds nothing, so the full read is tried too); value left empty with a note'],
+        ],
+        footnote: 'The first version read the quote page with scripts on and took 7.8–11.4 s for one company. Scripts off is the main saving. The value is the live one and changes through the day, so it is never stored. The results sheet looks up filings with events only, and one read per company however many filings it has.',
+      },
+      {
         id: 'acq-retrain',
         title: 'Retraining the 2.01 direction model: nothing beat the deployed one',
         intro: 'The training labels (from a 14B-parameter judge model) were regenerated on 2,256 training filings (1,855 completed). Test = 110 hand-read filings (Jan–Mar 2025 reads + the 76 hand-labelled earlier), never used for training. Two seeds each; one filing is about 1 point, so differences of 3 or less are noise.',

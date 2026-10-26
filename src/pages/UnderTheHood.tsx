@@ -350,8 +350,9 @@ export default function UnderTheHood() {
 
       <section aria-labelledby="h-mcap">
         <h2 id="h-mcap">How the market value is worked out</h2>
-        <p className="lead small">Market value on the filing date = shares outstanding × the closing price. No AI model is involved: the shares come from SEC data, the price from Yahoo Finance.</p>
+        <p className="lead small">Two market values are shown. <b>Market cap (today)</b> is read straight from Yahoo Finance’s quote page. <b>Market value on the filing date</b> = shares outstanding × the closing price that day. No AI model is involved: the shares come from SEC data, the prices from Yahoo Finance.</p>
         <ol className="aloop small">
+          <li><Node icon="🟦" title="Market cap today" sub="Yahoo quote page, “Market Cap (intraday)”" tone="blue" /><Arrow /></li>
           <li><Node icon="📄" title="Shares" sub="cover of the latest 10-K / 10-Q (SEC)" tone="blue" /><Arrow /></li>
           <li><Node icon="📈" title="Price" sub="Yahoo Finance history page" tone="violet" /><Arrow /></li>
           <li><Node icon="✍" title="If it fails" sub="type the value, or leave it empty" tone="amber" /><Arrow /></li>
@@ -359,11 +360,15 @@ export default function UnderTheHood() {
         </ol>
         <div className="grid-2 tight">
           <div className="card">
+            <h3>Market cap today (the main column)</h3>
+            <p className="small">A headless browser opens the company’s Yahoo quote page and reads the “Market Cap (intraday)” field (for example “893.0M”), turned into dollars. Scripts are skipped first; if that finds nothing the page is read once more with scripts. On the filing page it is the bright box under the table and shows within seconds. In the results sheet, “Get market cap” reads it once per company (not once per filing), for filings with events only, 5 tabs side by side, 16 companies per call. It is the live value, not the value on the filing date, so it changes through the day.</p>
+          </div>
+          <div className="card">
             <h3>Shares outstanding</h3>
             <p className="small">From the SEC’s tagged data on the front page of the company’s latest 10-K or 10-Q filed on or before the filing date. A company with several share classes has them added up. The count is about 3 months old on average (86 days) because the cover is dated when the report was written.</p>
           </div>
           <div className="card">
-            <h3>Closing price</h3>
+            <h3>Closing price (filing-date value)</h3>
             <p className="small">A headless browser opens Yahoo Finance’s public history page, presses “Accept all” if a cookie dialog shows, and reads the price table from the page Yahoo sends (scripts, style sheets, pictures and fonts are skipped). It takes the last close on or before the filing date. Yahoo has no public data service, so this reads the same page a person sees.</p>
           </div>
           <div className="card">
@@ -376,11 +381,13 @@ export default function UnderTheHood() {
           </div>
         </div>
         <ul className="afacts">
-          <li><b>2.6 s</b>median wait to read one company from Yahoo (it was 20 s before the page was slimmed down)</li>
+          <li><b>1.9 s</b>median wait for today’s market cap of one company (slowest 4.3 s)</li>
+          <li><b>0.63 s</b>per company when 40 are read in one call (39 of 40 found, 25 s in total)</li>
+          <li><b>2.6 s</b>median wait to read one company’s closing prices from Yahoo (it was 20 s before the page was slimmed down)</li>
           <li><b>0.8 s</b>per company when many are read in one call</li>
           <li><b>7 days</b>a stored price is used (6 hours for the last 3 days), then it is read again</li>
         </ul>
-        <p className="note">Limits: Yahoo’s closing prices are adjusted for later stock splits, so for a company that split afterwards the price is not the one paid that day. Reading Yahoo’s pages by program is against Yahoo’s terms and the site’s server could be blocked after heavy use. Stored prices are deleted by a daily job. Full timings are in the Model notes.</p>
+        <p className="note">Limits: Yahoo’s closing prices are adjusted for later stock splits, so for a company that split afterwards the price is not the one paid that day. Reading Yahoo’s pages by program is against Yahoo’s terms and the site’s server could be blocked after heavy use. Stored prices are deleted by a daily job; today’s market cap is not stored at all, it is read again each time. The sheet’s filter can use either value (“today” is the default). Full timings are in the Model notes.</p>
       </section>
 
       <section aria-labelledby="h-names" className="grid-2 tight">
