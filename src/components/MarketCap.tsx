@@ -27,6 +27,7 @@ export default function MarketCap({ cik, date }: { cik: string; date: string }) 
   const [stage, setStage] = useState<Stage>('loading')
   const [yahooMs, setYahooMs] = useState<number | null>(null)
   const [yahooEmpty, setYahooEmpty] = useState('')
+  const [now, setNow] = useState<{ value: number | null; note?: string } | null>(null)
   const [skipped, setSkipped] = useState(() => wasSkipped(cik, date))
   const [price, setPrice] = useState('')
   const [shares, setShares] = useState('')
@@ -56,11 +57,15 @@ export default function MarketCap({ cik, date }: { cik: string; date: string }) 
 
   useEffect(() => {
     let gone = false
-    setD(null); setErr(''); setStage('loading'); setYahooMs(null); setYahooEmpty(''); setSkipped(wasSkipped(cik, date)); asked.current = ''
+    setD(null); setErr(''); setStage('loading'); setYahooMs(null); setYahooEmpty(''); setNow(null); setSkipped(wasSkipped(cik, date)); asked.current = ''
     ;(async () => {
       try {
         const first = await load()
         if (gone || !first) return
+        // today's market cap straight from Yahoo's quote page, shown beside the filing-date value (it does not hold the page up)
+        if (first.ticker) {
+          void fetch(`/api/yahoo?ticker=${encodeURIComponent(first.ticker)}&caponly=1`).then((r) => r.json()).then((y) => { if (!gone) setNow({ value: y.currentMarketCap ?? null, note: y.note ?? y.error }) }).catch(() => { if (!gone) setNow({ value: null, note: 'Could not reach Yahoo.' }) })
+        }
         // no price stored for this company: read Yahoo's public history page once (about 15–30 seconds)
         if (!first.market.price && first.ticker && !first.manual?.price && asked.current !== first.ticker) {
           asked.current = first.ticker
@@ -137,6 +142,9 @@ export default function MarketCap({ cik, date }: { cik: string; date: string }) 
               </tbody>
             </table>
           </div>
+          <p className="muted small">
+            Market cap today (Yahoo Finance, live): {now == null ? 'reading…' : now.value ? <b>{money(now.value)}</b> : (now.note ?? 'not shown')}. This is the current value, not the value on the filing date.
+          </p>
           {d.differencePct != null && <p className="muted small">The SEC-only value is {d.differencePct > 0 ? '+' : ''}{d.differencePct}% from the closing-price value. Both use the same share count, so the gap is only the price.</p>}
           {d.market.source === 'Yahoo Finance' && <p className="muted small">Yahoo’s closing prices are adjusted for later stock splits, so for a company that split afterwards this price is not the one paid on that day. Stored prices are used for 7 days (6 hours for the last 3 days), then read again.</p>}
           {needsHelp && !skipped && (

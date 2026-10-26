@@ -33,6 +33,30 @@ async function accept(page: Page, log?: string[]) {
   if (btn) { await btn.click(); await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 12000 }).catch(() => undefined); log?.push('cookie dialog: pressed Accept all') }
 }
 
+
+/** "3.12T", "812.4B", "45.6M" or "1,234,567" as a number of dollars. */
+export function parseCap(text: string | null): number | null {
+  const m = /^\$?\s*([\d,]*\.?\d+)\s*([TBMK])?$/i.exec((text || '').trim())
+  if (!m) return null
+  const n = Number(m[1].replace(/,/g, '')) * ({ T: 1e12, B: 1e9, M: 1e6, K: 1e3 } as Record<string, number>)[(m[2] || '').toUpperCase()] || Number(m[1].replace(/,/g, ''))
+  return n > 0 ? Math.round(n) : null
+}
+
+/** Today's market cap from the company's Yahoo quote page ("Market Cap (intraday)"), one tab. */
+async function readQuote(browser: Browser, ticker: string, until: number) {
+  const page = await browser.newPage()
+  try {
+    await lean(page, false)
+    await page.goto(`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/`, { waitUntil: 'domcontentloaded', timeout: Math.max(5000, Math.min(25_000, until - Date.now())) })
+    await accept(page)
+    const text = await page.evaluate(() => {
+      const li = Array.from(document.querySelectorAll('li, tr')).find((e) => /^Market Cap/i.test((e.textContent || '').trim()))
+      return li ? (li.textContent || '').replace(/^Market Cap\s*(\(intraday\))?/i, '').trim().slice(0, 30) : null
+    })
+    return { text, value: parseCap(text) }
+  } finally { await page.close().catch(() => undefined) }
+}
+
 interface Read { needsScripts?: boolean; ok: boolean; rows: Record<string, number>; blocked?: string; error?: string; timings: Record<string, number>; log: string[]; title?: string }
 
 /** One company on one tab. `until` is the moment after which no more waiting is done. */
@@ -124,20 +148,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!valid({ ticker, from, to })) return res.status(400).json({ error: 'bad_request', message: 'Give ?ticker=AAPL&from=YYYY-MM-DD&to=YYYY-MM-DD.' })
     browser = await launch()
     const launchMs = Date.now() - t0
+    if (one(req.query.caponly)) {
+      const q = await readQuote(browser, ticker, until).catch((e) => ({ text: null, value: null, error: String(e).slice(0, 120) }))
+      return res.status(200).json({ ok: !!q.value, ticker, currentMarketCap: q.value, shown: q.text, asOf: new Date().toISOString(), ms: Date.now() - t0, ...(q.value ? {} : { note: 'Yahoo’s quote page showed no market cap for this ticker.' }) })
+    }
     const r = await read(browser, { ticker, from, to }, until)
     let marketCap: string | null = null
     const tm = { launchMs, ...r.timings } as Record<string, number>
     if (r.ok && one(req.query.quote) && Date.now() < until - 6000) {
-      const page = await browser.newPage()
-      try {
-        await lean(page, false)
-        await page.goto(`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/`, { waitUntil: 'domcontentloaded', timeout: 15000 })
-        await accept(page)
-        marketCap = await page.evaluate(() => {
-          const li = Array.from(document.querySelectorAll('li, tr')).find((e) => /^Market Cap/i.test((e.textContent || '').trim()))
-          return li ? (li.textContent || '').replace(/^Market Cap\s*(\(intraday\))?/i, '').trim().slice(0, 30) : null
-        })
-      } finally { await page.close().catch(() => undefined) }
+      marketCap = (await readQuote(browser, ticker, until).catch(() => null))?.text ?? null
     }
     const ts = Date.now()
     let stored = 0
