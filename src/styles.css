@@ -637,3 +637,9 @@ td.empty { text-align: center; }
 .signout { margin-left: 8px; font-size: .85rem; }
 .mcap { margin: 14px 0; }
 .mcap h3 { margin: 0 0 6px; }
+.mcap-manual { margin-top: 10px; padding: 12px; border: 1px dashed var(--border); border-radius: 10px; }
+.mcap-fields { display: flex; gap: 14px; flex-wrap: wrap; margin: 8px 0; }
+.mcap-fields label { display: grid; gap: 4px; font-size: .85rem; }
+.mcap-fields input { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); width: 190px; font-family: inherit; }
+.mcap-actions { display: flex; gap: 8px; }
+.mcap-time { margin-top: 6px; }

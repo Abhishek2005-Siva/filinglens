@@ -1,6 +1,7 @@
 import { get, put } from '@vercel/blob'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { requireAccess } from './_auth.js'
+import { manualFor } from './manual.js'
 import { importedPrices } from './prices.js'
 import { UA, noDashes, one, padCik, secFetch } from './_sec.js'
 
@@ -67,7 +68,7 @@ async function closingPrice(ticker: string, date: string): Promise<{ price?: num
   const mine = await importedPrices(ticker)
   const lo = new Date(Date.parse(date) - 10 * DAY).toISOString().slice(0, 10)
   const day = Object.keys(mine).filter((d) => d <= date && d >= lo).sort().pop()
-  if (day) return { price: Math.round(mine[day] * 100) / 100, priceDate: day, source: 'Yahoo (file you uploaded)' }
+  if (day) return { price: Math.round(mine[day] * 100) / 100, priceDate: day, source: 'Yahoo Finance' }
   // 2) a licensed feed, if its key is set
   const key = process.env.TIINGO_TOKEN || ''
   if (!key) return { error: 'No Yahoo file uploaded for this ticker, and no price-feed key is set on the site.' }
@@ -100,9 +101,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const date = one(req.query.date) || new Date().toISOString().slice(0, 10)
   if (!cik || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'bad_request', message: 'Give ?cik=…&date=YYYY-MM-DD.' })
   try {
-    const [sh, sec] = await Promise.all([shares(cik, date), secPrice(cik, date)])
+    const T = { start: Date.now(), shares: 0, sec: 0, price: 0, manual: 0 }
+    const timed = async <X,>(k: 'shares' | 'sec', p: Promise<X>) => { const r = await p; T[k] = Date.now() - T.start; return r }
+    const [sh0, sec] = await Promise.all([timed('shares', shares(cik, date)), timed('sec', secPrice(cik, date))])
     const ticker = one(req.query.ticker) || ('ticker' in sec ? (sec.ticker as string) : '')
-    const yh = await closingPrice(ticker, date)
+    const t1 = Date.now()
+    const [yh0, man] = await Promise.all([closingPrice(ticker, date), manualFor(cik, date)])
+    T.price = Date.now() - t1
+    // values a person typed in win over the automatic ones
+    const sh = man.shares ? { value: man.shares, classes: 1, asOf: date, filed: date, form: 'entered by hand', accession: '' } : sh0
+    const yh = man.price ? { price: man.price, priceDate: date, source: 'Entered by hand' } : yh0
     const cap = (p?: number) => (sh && p ? Math.round(sh.value * p) : null)
     const secCap = cap('price' in sec ? sec.price : undefined)
     const yhCap = cap('price' in yh ? yh.price : undefined)
@@ -110,6 +118,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       cik, date, ticker, name: 'name' in sec ? sec.name : '',
       shares: sh, sec: { ...sec, marketCap: secCap }, market: { ...yh, marketCap: yhCap },
       differencePct: secCap && yhCap ? Math.round(((secCap - yhCap) / yhCap) * 10000) / 100 : null,
+      manual: { price: !!man.price, shares: !!man.shares },
+      timings: { sharesMs: T.shares, secMs: T.sec, priceLookupMs: T.price, totalMs: Date.now() - T.start },
     })
   } catch (e) {
     return res.status(502).json({ error: 'upstream', message: `Could not compute the market value: ${String(e).slice(0, 160)}` })

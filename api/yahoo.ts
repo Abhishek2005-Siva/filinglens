@@ -19,9 +19,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const log: string[] = []
   let browser: Browser | null = null
   const t0 = Date.now()
+  const tm: Record<string, number> = {}
   try {
     browser = await puppeteer.launch({ args: chromium.args, executablePath: await chromium.executablePath(), headless: 'shell', defaultViewport: { width: 1280, height: 900 } })
-    log.push(`browser started (${Date.now() - t0} ms)`)
+    tm.launchMs = Date.now() - t0
+    log.push(`browser started (${tm.launchMs} ms)`)
     const page = await browser.newPage()
     const consent = async () => {
       // the cookie dialog (it appears in some countries): press "Accept all" like a person would
@@ -32,13 +34,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
     const p1 = Math.floor(Date.parse(from) / 1000), p2 = Math.floor(Date.parse(to) / 1000) + 86_400
+    const tg = Date.now()
     const resp = await page.goto(`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/history/?period1=${p1}&period2=${p2}&frequency=1d`, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    tm.pageMs = Date.now() - tg
     log.push(`history page: HTTP ${resp?.status()} · ${page.url().slice(0, 90)}`)
     await consent()
     const title = await page.title()
     const body = (await page.evaluate(() => document.body?.innerText || '')).slice(0, 300)
     if (/too many requests|unusual traffic|captcha|access denied|robot/i.test(`${title} ${body}`)) return res.status(200).json({ ok: false, blocked: true, title, log, note: body.slice(0, 160) })
-    await page.waitForSelector('table tbody tr', { timeout: 20000 }).catch(() => undefined)
+    const tt = Date.now()
+    await page.waitForSelector('table tbody tr', { timeout: 20000 }).catch(async () => {
+      // one more try: a slow page, not a different method
+      log.push('table did not appear in time; loading the page once more')
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => undefined)
+      await page.waitForSelector('table tbody tr', { timeout: 20000 }).catch(() => undefined)
+    })
+    tm.tableMs = Date.now() - tt
     const cells: string[][] = await page.$$eval('table tbody tr', (trs) => trs.map((tr) => Array.from(tr.querySelectorAll('td')).map((td) => (td.textContent || '').trim())))
     const rows: Record<string, number> = {}
     for (const c of cells) {
@@ -59,8 +70,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       log.push(`quote page market cap (current): ${marketCap}`)
     }
     let stored = 0
+    const ts = Date.now()
     if (Object.keys(rows).length) stored = (await storePrices(ticker, rows)).length
-    return res.status(200).json({ ok: Object.keys(rows).length > 0, title, closes: rows, stored, currentMarketCap: marketCap, log, ms: Date.now() - t0 })
+    tm.storeMs = Date.now() - ts
+    return res.status(200).json({ ok: Object.keys(rows).length > 0, title, closes: rows, stored, currentMarketCap: marketCap, log, ms: Date.now() - t0, timings: tm, ...(Object.keys(rows).length ? {} : { empty: true, note: 'Yahoo showed no prices for this ticker and these dates (delisted, renamed or not listed there).' }) })
   } catch (e) {
     return res.status(200).json({ ok: false, error: String(e).slice(0, 300), log, ms: Date.now() - t0 })
   } finally {
