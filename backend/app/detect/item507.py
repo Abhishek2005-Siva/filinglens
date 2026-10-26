@@ -100,7 +100,7 @@ def _split_cells(line: str) -> List[str]:
     first, rest = cells[0], [c for c in cells[1:] if c]
     # a share of the vote written next to the count ("92.30 | %", "99.7%") is not a count
     if len(rest) >= 3 and sum(bool(re.fullmatch(r"[\d,]{3,}", c)) for c in rest) >= 2:
-        rest = [c for c in rest if c != "%" and not re.fullmatch(r"\d{1,3}(?:\.\d+)?\s*%?", c)]
+        rest = [c for c in rest if c != "%" and not re.fullmatch(r"\d{1,3}\.\d+\s*%?|\d{1,3}\s*%", c)]
     return [first] + rest
 
 
@@ -201,7 +201,7 @@ def parse_votes(section: str) -> dict:
         desc = t["desc"]
         if {"y1", "y2", "y3"} & cols:
             kind = "frequency"
-        elif len(rows) >= 2 or "withheld" in cols or (_DIRECTOR_DESC.search(t.get("last", "")) and not _NOT_ELECTION.search(t.get("last", ""))):
+        elif len(rows) >= 2 or ("withheld" in cols and "against" not in cols) or (_DIRECTOR_DESC.search(t.get("last", "")) and not _NOT_ELECTION.search(t.get("last", ""))):
             kind = "directors"
         else:
             kind = "proposal"
