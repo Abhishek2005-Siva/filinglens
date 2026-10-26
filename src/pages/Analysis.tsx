@@ -232,6 +232,7 @@ export default function Analysis({ id }: { id: string }) {
     ['Filings with at least one event', String(withEvents)],
     ['Status', `${st.label}${meta.total ? ` (${meta.done} of ${meta.total})` : ''}`],
     ['How to read this', 'Each row is one SEC filing. Event columns show what the AI found, the person or detail, and in [brackets] how sure it is. Blank means nothing found for that event type.'],
+    ['Market cap columns', 'Filled only if “Get market cap” was pressed, and only for filings with events. “Market cap” is Yahoo Finance’s live value on the day it was fetched; “Market cap on filing date” is the SEC share count × the closing price that day (Yahoo closes are adjusted for later stock splits). Blank means not looked up or not found.'],
     ['Caveats', 'AI output with imperfect accuracy; check the evidence sentence and the SEC link. Experimental detectors (CFO, acquisitions, agreements, equity sales, guidance, restructuring) have thinner testing.'],
   ]
 
