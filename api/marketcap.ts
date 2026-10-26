@@ -45,7 +45,7 @@ async function secPrice(cik: string, date: string) {
         const p = Number(/<transactionPricePerShare>\s*<value>([^<]+)/.exec(blk)?.[1])
         const sh = Number(/<transactionShares>\s*<value>([^<]+)/.exec(blk)?.[1]) || 0
         const code = /<transactionCode>([^<]+)/.exec(blk)?.[1]?.trim() || ''
-        if (d && d <= date && p > 0 && ['P', 'S', 'F'].includes(code)) rows.push({ date: d, price: p, shares: sh, code, acc: f.acc })
+        if (d && d <= date && d >= lo && p > 0 && ['P', 'S', 'F'].includes(code)) rows.push({ date: d, price: p, shares: sh, code, acc: f.acc })
       }
     } catch { /* one unreadable Form 4 is not fatal */ }
   }
