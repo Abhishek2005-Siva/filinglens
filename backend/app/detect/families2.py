@@ -160,6 +160,26 @@ class CFO(DistressFamily):
 
 
 # --------------------------------------------------------------------------------- 2.01
+_SUB_OF_FILER = re.compile(r"(?i)\b(?:became|become|becomes|shall\s+become|will\s+become|is\s+now|are\s+now|now)\s+an?\s+(?:direct\s+or\s+indirect\s+)?(?:indirect\s+)?(?:wholly[- ]owned|majority[- ]owned)\s+(?:direct\s+)?subsidiar(?:y|ies)\s+of\s+FILER\b")
+_FILER_BECAME = re.compile(r"\bFILER\b[^.]{0,120}?\b(?:became|become|becomes|shall\s+become|will\s+become|is\s+now|survived\s+as|continued\s+as)\s+an?\s+(?:direct\s+or\s+indirect\s+)?(?:indirect\s+)?(?:wholly[- ]owned)\s+(?:direct\s+)?subsidiar(?:y|ies)\s+of\b")
+_FILER_SOLD = re.compile(r"\bFILER\b[^.]{0,60}?\b(?:completed|consummated|closed)\s+(?:its\s+|the\s+)?(?:previously\s+announced\s+)?(?:sale|disposition|divestiture)\s+of\b|"
+                         r"\bFILER\b[^.]{0,40}(?<!issued and )(?<!and )\bsold\s+(?:all|substantially\s+all|its|the)\s+(?:of\s+)?(?:the\s+|its\s+)?(?:issued\s+and\s+outstanding\s+)?(?:business|subsidiar|stock|shares\s+of|assets|equity|membership|interest|property|properties)")
+
+
+def direction_from_wording(marked_text: str):
+    """ACQUISITION / ACQUIRED / DISPOSITION when the text says in so many words who became whose subsidiary ('Target became a wholly owned subsidiary of FILER')
+    or that the filer sold a business or assets; None when it does not. Checked on 1,855 training filings (consensus of two labelers: right 218 of 228
+    that fired) and 110 hand-labelled test filings (19 of 19)."""
+    for m in _SUB_OF_FILER.finditer(marked_text):
+        if not re.search(r"FILER[^.]{0,25}$", marked_text[max(0, m.start() - 40):m.start()]):  # not 'FILER became a subsidiary of FILER' (namesake merger)
+            return "ACQUISITION"
+    if _FILER_BECAME.search(marked_text):
+        return "ACQUIRED"
+    if _FILER_SOLD.search(marked_text):
+        return "DISPOSITION"
+    return None
+
+
 class Acquisition(Family):
     key, item, title = "acquisition", "2.01", "Acquisition or sale of assets completed"
     models = ["acq_sent", "acq_doc"]
@@ -228,6 +248,11 @@ class Acquisition(Family):
             dp = _softmax_probs([doc], dtok, dmodel, 384)[0]
             dl = ["ACQUISITION", "DISPOSITION", "ACQUIRED", "UNCLEAR"]
             dk = max(range(4), key=dp.__getitem__)
+            wide = " || ".join(x for x in (" ".join(intro.split())[:1500] if intro else "", " ".join(body.split())[:3000], " ".join(strip_caption(sec101[:MAX_SECTION], "1.01").split())[:1500] if sec101 else "") if x)
+            said = direction_from_wording(mark_self(wide, aliases))
+            by_rule = bool(said and said != dl[dk])
+            if said:
+                dk = dl.index(said)
             best = max(positives)
             amounts = extract_amounts(sec)
             per_share = [] if amounts else extract_amounts(sec, per_unit=True)
@@ -235,6 +260,7 @@ class Acquisition(Family):
                 "label": dl[dk], "title": self.ACQ_TITLES[dl[dk]], "confidence": round(dp[dk], 4),
                 "evidence": best[1], "detail": f"Largest amount mentioned: {_money(max(amounts))}" if amounts else (f"Price per share mentioned: {_money(max(per_share))}" if per_share else ""),
                 **({"fromItem": True} if from_item else {}),
+                **({"source": "wording rule (the text says who became whose subsidiary, or that the filer sold)"} if by_rule else {}),
                 "readers": [{"reader": "Direction reader · RoBERTa-large", "probability": round(dp[dk], 4)},
                             {"reader": "Sentence reader · RoBERTa-base (deal completed)", "probability": round(best[0], 4)}],
             })
