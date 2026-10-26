@@ -3,6 +3,8 @@ import { COLUMNS, type Row } from '../batch/columns'
 import { downloadCsv, downloadXlsx } from '../batch/export'
 import { fillMarketCaps, fillTodayCaps, fmtCap, UNITS, type Cap } from '../batch/marketcap'
 
+const hasEvents = (r: Row) => Number(r['Events found']) > 0
+
 type SortKey = 'Filed' | 'Company' | 'Events found' | 'Market cap' | 'Market cap today'
 
 const STICKY = new Set(['Company'])
@@ -61,7 +63,7 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
     stopCaps.current = false
     setCapBusy('Starting…')
     try {
-      setToday(await fillTodayCaps(baseRows, setCapBusy, () => stopCaps.current))
+      setToday(await fillTodayCaps(baseRows.filter(hasEvents), setCapBusy, () => stopCaps.current))
       setBasis('Market cap today')
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Could not get the market caps.')
@@ -73,7 +75,7 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
     stopCaps.current = false
     setCapBusy('Starting…')
     try {
-      const out = await fillMarketCaps(baseRows, setCapBusy, () => stopCaps.current)
+      const out = await fillMarketCaps(baseRows.filter(hasEvents), setCapBusy, () => stopCaps.current)
       setCaps((c) => ({ ...c, ...out }))
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Could not get the market caps.')
@@ -117,7 +119,7 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
           <button type="button" className="btn" onClick={() => void getCaps()} disabled={!!capBusy}>{haveFiling ? 'Refresh market cap on filing date' : 'Get market cap on filing date'}</button>
           {capBusy && <button type="button" className="btn small" onClick={() => { stopCaps.current = true }}>Stop</button>}
           {(haveFiling || haveToday) && !capBusy && <button type="button" className="btn small" onClick={() => { setCaps({}); setToday({}); setMinAmount(''); setKeepUnknown(false); setBasis('Market cap') }}>Clear market caps</button>}
-          <span className="muted small" role="status">{capBusy || (haveToday || haveFiling ? `${haveToday ? `Today: found for ${todayFound} of ${rows.length} filings. ` : ''}${haveFiling ? `On the filing date: found for ${capsFound} of ${rows.length}. ` : ''}The rest are empty.` : '“Today” reads Yahoo’s current market cap for each company (one read per company, quick). “On the filing date” is the SEC share count × the closing price that day.')}</span>
+          <span className="muted small" role="status">{capBusy || (haveToday || haveFiling ? `${haveToday ? `Today: found for ${todayFound} of ${withEvents} filings with events. ` : ''}${haveFiling ? `On the filing date: found for ${capsFound} of ${withEvents}. ` : ''}The rest are empty.` : '“Today” reads Yahoo’s current market cap for each company (one read per company, quick). Only filings with events are looked up. “On the filing date” is the SEC share count × the closing price that day.')}</span>
         </div>
         <div className="mcap-panel-filter">
           <b>Keep only market cap</b>
