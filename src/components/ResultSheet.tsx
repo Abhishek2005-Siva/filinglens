@@ -5,7 +5,7 @@ import { fillMarketCaps, fillTodayCaps, fmtCap, UNITS, type Cap } from '../batch
 
 const hasEvents = (r: Row) => Number(r['Events found']) > 0
 
-type SortKey = 'Filed' | 'Company' | 'Events found' | 'Market cap' | 'Market cap today'
+type SortKey = 'Filed' | 'Company' | 'Events found' | 'Market cap on filing date' | 'Market cap'
 
 const STICKY = new Set(['Company'])
 // the columns that hold one kind of event each (CEO / CFO changes, then the other detectors)
@@ -16,15 +16,15 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
   const [caps, setCaps] = useState<Record<string, Cap>>({})
   const [today, setToday] = useState<Record<string, Cap>>({})
   const [capBusy, setCapBusy] = useState('')
-  const [basis, setBasis] = useState<'Market cap' | 'Market cap today'>('Market cap')
+  const [basis, setBasis] = useState<'Market cap on filing date' | 'Market cap'>('Market cap')
   const [minAmount, setMinAmount] = useState('')
   const [unit, setUnit] = useState('million')
   const [keepUnknown, setKeepUnknown] = useState(false)
   const stopCaps = useRef(false)
-  const rows = useMemo<Row[]>(() => baseRows.map((r) => { const c = caps[String(r.Accession)], t = today[String(r.Accession)]; return { ...r, ...(c ? { 'Market cap': c.cap ?? '', 'Market cap note': c.note } : {}), ...(t ? { 'Market cap today': t.cap ?? '' } : {}) } }), [baseRows, caps, today])
+  const rows = useMemo<Row[]>(() => baseRows.map((r) => { const c = caps[String(r.Accession)], t = today[String(r.Accession)]; return { ...r, ...(c ? { 'Market cap on filing date': c.cap ?? '', 'Market cap on filing date (note)': c.note } : {}), ...(t ? { 'Market cap': t.cap ?? '' } : {}) } }), [baseRows, caps, today])
   const haveFiling = Object.keys(caps).length > 0
   const haveToday = Object.keys(today).length > 0
-  const haveCaps = basis === 'Market cap' ? haveFiling : haveToday
+  const haveCaps = basis === 'Market cap' ? haveToday : haveFiling
   const minValue = Number(minAmount.replace(/,/g, '')) * (UNITS[unit] ?? 1)
   const filterOn = haveCaps && Number.isFinite(minValue) && minValue > 0
   const [filter, setFilter] = useState('')
@@ -57,14 +57,14 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
     })
   }, [rows, filter, onlyEvents, sort, picked, match, check, filterOn, minValue, keepUnknown, basis])
 
-  const capsFound = rows.filter((r) => typeof r['Market cap'] === 'number').length
-  const todayFound = rows.filter((r) => typeof r['Market cap today'] === 'number').length
+  const capsFound = rows.filter((r) => typeof r['Market cap on filing date'] === 'number').length
+  const todayFound = rows.filter((r) => typeof r['Market cap'] === 'number').length
   const getToday = async () => {
     stopCaps.current = false
     setCapBusy('Starting…')
     try {
       setToday(await fillTodayCaps(baseRows.filter(hasEvents), setCapBusy, () => stopCaps.current))
-      setBasis('Market cap today')
+      setBasis('Market cap')
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Could not get the market caps.')
     } finally {
@@ -123,14 +123,14 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
         </div>
         <div className="mcap-panel-filter">
           <b>Keep only market cap</b>
-          <select value={basis} onChange={(e) => setBasis(e.target.value as typeof basis)} aria-label="Which market cap to filter on"><option value="Market cap">on the filing date</option><option value="Market cap today">today</option></select>
+          <select value={basis} onChange={(e) => setBasis(e.target.value as typeof basis)} aria-label="Which market cap to filter on"><option value="Market cap">today</option><option value="Market cap on filing date">on the filing date</option></select>
           <b>above</b>
           <input inputMode="decimal" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} placeholder="e.g. 500" disabled={!haveCaps} aria-label="Smallest market cap to keep" />
           <select value={unit} onChange={(e) => setUnit(e.target.value)} disabled={!haveCaps} aria-label="Unit">
             {Object.keys(UNITS).map((u) => <option key={u} value={u}>{u}</option>)}
           </select>
           <label className="check-line"><input type="checkbox" checked={keepUnknown} onChange={(e) => setKeepUnknown(e.target.checked)} disabled={!filterOn} /> <span>Also keep filings with no market cap found</span></label>
-          {!haveCaps && <span className="muted small">Press “Get market cap {basis === 'Market cap' ? 'on filing date' : 'today'}” first.</span>}
+          {!haveCaps && <span className="muted small">Press “Get market cap {basis === 'Market cap' ? 'today' : 'on filing date'}” first.</span>}
           {filterOn && <span className="muted small">Keeping companies worth at least {fmtCap(minValue)}.</span>}
         </div>
       </div>
@@ -168,7 +168,7 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
             <tr>
               <th className="rownum" aria-hidden="true">#</th>
               {shownCols.map((c) => {
-                const sortable = c === 'Filed' || c === 'Company' || c === 'Events found' || c === 'Market cap' || c === 'Market cap today'
+                const sortable = c === 'Filed' || c === 'Company' || c === 'Events found' || c === 'Market cap on filing date' || c === 'Market cap'
                 return (
                   <th key={c} className={STICKY.has(c) ? 'sticky' : ''} scope="col" aria-sort={sortable && sort.key === c ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined}>
                     {sortable ? <button type="button" className="th-btn" onClick={() => sortBy(c as SortKey)}>{c}{sort.key === c ? (sort.dir === 1 ? ' ▲' : ' ▼') : ''}</button> : c}
@@ -184,8 +184,8 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
                 {shownCols.map((c) => {
                   const v = r[c] ?? ''
                   if (c === 'Company') return <td key={c} className="sticky"><button type="button" className="linklike" onClick={() => open(r)}>{v}</button></td>
-                  if (c === 'Market cap today') return <td key={c} className="num">{typeof v === 'number' ? fmtCap(v) : ''}</td>
-                  if (c === 'Market cap') return <td key={c} className="num" title={String(r['Market cap note'] ?? '')}>{typeof v === 'number' ? fmtCap(v) : ''}</td>
+                  if (c === 'Market cap') return <td key={c} className="num">{typeof v === 'number' ? fmtCap(v) : ''}</td>
+                  if (c === 'Market cap on filing date') return <td key={c} className="num" title={String(r['Market cap on filing date (note)'] ?? '')}>{typeof v === 'number' ? fmtCap(v) : ''}</td>
                   if (c === 'SEC link') return <td key={c}>{v ? <a href={String(v)} target="_blank" rel="noreferrer">Open ↗</a> : ''}</td>
                   const isEvent = c !== 'Events found' && COLUMNS.indexOf(c) >= 8 && COLUMNS.indexOf(c) <= 20 && !!v
                   return <td key={c} className={`${isEvent ? 'hit' : ''} ${c === 'Events found' || c === 'Top confidence' ? 'num' : ''} ${String(v).startsWith('Error') ? 'err' : ''}`} title={String(v)}>{v}</td>
