@@ -63,7 +63,20 @@ export interface Session {
   located: boolean
 }
 
+/** The model server saves the results of a long analysis back to the site with the shared API key; that is a program, not a visitor, so no cookies. */
+const isModelServer = (req: VercelRequest): boolean => {
+  const key = process.env.MODEL_API_KEY || ''
+  const got = String(req.headers.authorization || '')
+  if (!key || !got.startsWith('Bearer ')) return false
+  try {
+    return timingSafeEqual(Buffer.from(got.slice(7)), Buffer.from(key))
+  } catch {
+    return false
+  }
+}
+
 export function sessionOf(req: VercelRequest): Session {
+  if (isModelServer(req)) return { id: null, auth: true, located: true }
   if (!authConfigured()) return { id: null, auth: false, located: false }
   if (req.headers['x-fl-pass'] && checkPassword(String(req.headers['x-fl-pass']))) return { id: null, auth: true, located: true }
   const c = cookies(req)
