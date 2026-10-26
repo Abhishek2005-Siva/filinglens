@@ -1,3 +1,4 @@
+import { requireAccess } from './_auth.js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { secFetch, one } from './_sec.js'
 
@@ -19,6 +20,7 @@ async function load(): Promise<Company[]> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!requireAccess(req, res)) return
   const q = one(req.query.q).trim().toLowerCase()
   if (q.length < 1) return res.status(200).json({ companies: [] })
   try {

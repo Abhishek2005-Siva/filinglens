@@ -4,6 +4,7 @@ import WaitLoader from '../components/WaitLoader'
 import { useNow } from '../hooks'
 import DetectorCard from '../components/DetectorCard'
 import Highlight from '../components/Highlight'
+import MarketCap from '../components/MarketCap'
 import { clearStarting, coldEstimate, markReady, markStarting, recordCold } from '../modelState'
 import { memory } from '../searchState'
 import type { AnalysisResult, Extraction, JobStatus } from '../types'
@@ -109,6 +110,8 @@ function Result({ r }: { r: AnalysisResult }) {
           {titles.length > 0 ? `${titles.join(' · ')} · ` : ''}Analyzed in {r.seconds}s
         </span>
       </div>
+
+      <MarketCap cik={r.filing.cik} date={r.filing.filed.slice(0, 10)} />
 
       {eventCount > 0 && <h2 className="sec-h">What happened</h2>}
       <div className="grid-2 tight">

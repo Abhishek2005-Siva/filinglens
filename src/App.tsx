@@ -8,6 +8,9 @@ import Filing from './pages/Filing'
 import Analysis from './pages/Analysis'
 import Analyses from './pages/Analyses'
 import ModelPower from './components/ModelPower'
+import Gate from './components/Gate'
+import Users from './pages/Users'
+import { signOut } from './auth'
 
 const pages = [
   { id: 'overview', label: 'Overview', el: Overview },
@@ -16,6 +19,7 @@ const pages = [
   { id: 'build', label: 'Under the hood', el: UnderTheHood },
   { id: 'results', label: 'Test results', el: Explorer },
   { id: 'notes', label: 'Model notes', el: Notes },
+  { id: 'users', label: 'Who’s online', el: Users },
 ] as const
 
 type Route = { page: string; cik?: string; accession?: string; id?: string }
@@ -30,7 +34,7 @@ const readRoute = (): Route => {
   return { page: pages.find((p) => p.id === parts[0])?.id ?? 'overview' }
 }
 
-export default function App() {
+function Shell() {
   const [route, setRoute] = useState<Route>(readRoute)
 
   useEffect(() => {
@@ -69,6 +73,7 @@ export default function App() {
             ))}
           </nav>
           <ModelPower />
+          <button type="button" className="linklike signout" onClick={() => void signOut()} title="Sign out of this browser">Sign out</button>
         </div>
       </header>
       <main className="container">
@@ -80,5 +85,13 @@ export default function App() {
         </div>
       </footer>
     </>
+  )
+}
+
+export default function App() {
+  return (
+    <Gate>
+      <Shell />
+    </Gate>
   )
 }

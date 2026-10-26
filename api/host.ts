@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { strToU8, zipSync } from 'fflate'
+import { requireAccess } from './_auth.js'
 import { ACCOUNTS, DATASET_SLUG, EXTRA_DATASETS, KERNEL_SLUG, type AccountDef } from './_accounts.js'
 import { datasetsApi, kaggle, KaggleError, kernelsApi, seconds } from './_kaggle.js'
 import { modelUrl, setModelUrl, tunnelDown } from './_model.js'
@@ -178,6 +179,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store')
   if (req.method !== 'POST') return res.status(405).json({ error: 'method', message: 'Use POST.' })
   const body = (req.body ?? {}) as { action?: string; account?: string; runHours?: number; dryRun?: boolean; except?: string; cancel?: boolean; force?: boolean }
+  if (body.action !== 'register' && !requireAccess(req, res)) return // the model server itself announces its address with the shared API key instead of a sign-in
   try {
     if (body.action === 'progress') {
       // light check used every few seconds while the server boots: just the Kaggle run status of one account

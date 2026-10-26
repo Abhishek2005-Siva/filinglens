@@ -6,6 +6,9 @@
     },
     "api/batch.ts": {
       "maxDuration": 60
+    },
+    "api/marketcap.ts": {
+      "maxDuration": 30
     }
   }
 }

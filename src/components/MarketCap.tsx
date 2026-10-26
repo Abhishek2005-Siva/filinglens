@@ -1,0 +1,61 @@
+import { useEffect, useState } from 'react'
+
+interface Price { price?: number; priceDate?: string; daysOld?: number; trades?: number; accession?: string; marketCap: number | null; error?: string }
+interface Cap {
+  ticker: string
+  shares: { value: number; classes: number; asOf: string; filed: string; form: string; accession: string } | null
+  sec: Price
+  yahoo: Price
+  differencePct: number | null
+}
+
+const money = (v: number) => (v >= 1e12 ? `$${(v / 1e12).toFixed(2)} trillion` : v >= 1e9 ? `$${(v / 1e9).toFixed(2)} billion` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)} million` : `$${v.toLocaleString()}`)
+const num = (v: number) => v.toLocaleString('en-US')
+
+/** Market value of the company on the filing date, worked out two ways so they can be compared. */
+export default function MarketCap({ cik, date }: { cik: string; date: string }) {
+  const [d, setD] = useState<Cap | null>(null)
+  const [err, setErr] = useState('')
+  useEffect(() => {
+    let gone = false
+    setD(null); setErr('')
+    fetch(`/api/marketcap?cik=${cik}&date=${date}`)
+      .then(async (r) => { const b = await r.json(); if (!r.ok) throw new Error(b.message ?? 'failed'); if (!gone) setD(b) })
+      .catch((e) => { if (!gone) setErr(e instanceof Error ? e.message : 'Could not load.') })
+    return () => { gone = true }
+  }, [cik, date])
+  return (
+    <section className="card mcap" aria-label="Market value">
+      <h3>Market value on the filing date{d?.ticker ? ` (${d.ticker})` : ''}</h3>
+      {err && <p className="muted small">Not available: {err}</p>}
+      {!d && !err && <p className="muted small">Working it out from SEC and Yahoo…</p>}
+      {d && (
+        <>
+          <p className="muted small">
+            Shares: {d.shares ? `${num(d.shares.value)} on the cover of the ${d.shares.form} filed ${d.shares.filed}${d.shares.classes > 1 ? ` (${d.shares.classes} share classes added up)` : ''}` : 'not found in SEC data'}
+          </p>
+          <div className="table-wrap">
+            <table className="data">
+              <thead><tr><th scope="col">Method</th><th scope="col">Price</th><th scope="col">Price date</th><th scope="col">Market value</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><b>SEC only</b><div className="muted small">latest insider trade (Form 4)</div></td>
+                  <td>{d.sec.price != null ? `$${d.sec.price}` : '—'}</td>
+                  <td>{d.sec.priceDate ? `${d.sec.priceDate} (${d.sec.daysOld} days before)` : <span className="muted small">{d.sec.error}</span>}</td>
+                  <td>{d.sec.marketCap ? <b>{money(d.sec.marketCap)}</b> : '—'}</td>
+                </tr>
+                <tr>
+                  <td><b>Yahoo</b><div className="muted small">closing price</div></td>
+                  <td>{d.yahoo.price != null ? `$${d.yahoo.price}` : '—'}</td>
+                  <td>{d.yahoo.priceDate ?? <span className="muted small">{d.yahoo.error}</span>}</td>
+                  <td>{d.yahoo.marketCap ? <b>{money(d.yahoo.marketCap)}</b> : '—'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          {d.differencePct != null && <p className="muted small">The SEC-only value is {d.differencePct > 0 ? '+' : ''}{d.differencePct}% from the Yahoo value. Both use the same share count, so the gap is only the price.</p>}
+        </>
+      )}
+    </section>
+  )
+}

@@ -1,3 +1,4 @@
+import { requireAccess } from './_auth.js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { one } from './_sec.js'
 import { modelUrl, tunnelDown } from './_model.js'
@@ -40,6 +41,7 @@ async function call(path: string, init?: RequestInit) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!requireAccess(req, res)) return
   res.setHeader('Cache-Control', 'no-store')
   try {
     if (req.method === 'POST' && (req.body ?? {}).selftest) {

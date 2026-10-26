@@ -1,8 +1,10 @@
+import { requireAccess } from './_auth.js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { secFetch, one, indexUrl, docUrl, padCik, type FilingRow } from './_sec.js'
 
 // A company's recent filings (like sec.gov's company page), straight from EDGAR submissions.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!requireAccess(req, res)) return
   const cik = one(req.query.cik)
   const forms = (one(req.query.forms) || '8-K').split(',').map((f) => f.trim().toUpperCase())
   const start = one(req.query.start)

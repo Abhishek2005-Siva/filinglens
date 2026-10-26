@@ -1,8 +1,10 @@
+import { requireAccess } from './_auth.js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { secFetch, one, indexUrl, docUrl, padCik, type FilingRow } from './_sec.js'
 
 // Mirrors sec.gov's "EDGAR Full-Text Search": keywords, form type, date range, company.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!requireAccess(req, res)) return
   const q = one(req.query.q).trim()
   const forms = one(req.query.forms) || '8-K'
   const start = one(req.query.start)

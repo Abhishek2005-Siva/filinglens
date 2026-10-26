@@ -1,3 +1,4 @@
+import { requireAccess } from './_auth.js'
 import { randomBytes } from 'node:crypto'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { get, put } from '@vercel/blob'
@@ -116,6 +117,7 @@ async function doneAccessions(meta: Meta): Promise<string[]> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!requireAccess(req, res)) return
   res.setHeader('Cache-Control', 'no-store')
   if (!process.env.BLOB_READ_WRITE_TOKEN) return res.status(503).json({ error: 'not_configured', message: 'Analysis storage is not connected yet.' })
   try {

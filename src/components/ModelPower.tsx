@@ -83,20 +83,33 @@ export default function ModelPower() {
     return () => window.clearInterval(id)
   }, [])
 
-  // A start that is already under way (begun here earlier, in another tab, or by someone else) is followed, not restarted:
-  // this only attaches to a server Kaggle already has queued or running. It never starts one.
+  // A start that someone else began (a second person, another tab, an earlier visit) is followed, not restarted: this only
+  // attaches to a server Kaggle already has queued or running, and never starts one. It is checked on load, every 15 seconds
+  // and when the tab comes back, so a server the other person switches on after this page opened shows up here too.
   useEffect(() => {
     if (DEMO) return
     let gone = false
-    hostCall<{ running: string | null }>('status')
-      .then(async (d) => {
-        if (gone || !d.running || live.current) return
+    const look = async () => {
+      if (gone || document.hidden || live.current) return
+      try {
+        const d = await hostCall<{ running: string | null }>('status')
+        if (gone || live.current) return
+        if (!d.running) {
+          // nobody has a server: a stale "on" badge from this browser's memory is wrong
+          setState((st) => (st === 'on' && readyUntil() <= Date.now() ? 'off' : st))
+          return
+        }
         const h = await modelHealth().catch(() => null)
-        if (gone || live.current || !h || h.ok) return // already reachable: the status check above handles that
+        if (gone || live.current || !h) return
+        if (h.ok) { markReady(); setState((st) => (st === 'on' ? st : 'on')); return } // already usable: just show it as on
         void watch(d.running, bootEstimate())
-      })
-      .catch(() => undefined)
-    return () => { gone = true }
+      } catch { /* leave the badge as it is */ }
+    }
+    void look()
+    const id = window.setInterval(() => void look(), 15000)
+    const onVisible = () => { if (!document.hidden) void look() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => { gone = true; window.clearInterval(id); document.removeEventListener('visibilitychange', onVisible) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

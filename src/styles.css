@@ -625,3 +625,15 @@ td.empty { text-align: center; }
 .event-filter .chip:focus-visible, .event-filter .seg button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .check-select { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: .84rem; color: var(--muted); }
 .check-select select { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+
+/* sign-in and location gate */
+.gate { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--bg); }
+.gate-card { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 28px 24px; text-align: center; }
+.gate-card h1 { margin: 6px 0 10px; font-size: 1.6rem; }
+.gate-card form { display: grid; gap: 12px; }
+.gate-card input { padding: 11px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 1rem; font-family: inherit; }
+.gate-mark { font-size: 2rem; }
+.gate-msg { color: var(--bad, #b3261e); margin: 6px 0 0; font-size: .92rem; }
+.signout { margin-left: 8px; font-size: .85rem; }
+.mcap { margin: 14px 0; }
+.mcap h3 { margin: 0 0 6px; }
