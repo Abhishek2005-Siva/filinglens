@@ -168,8 +168,8 @@ _FILER_SOLD = re.compile(r"\bFILER\b[^.]{0,60}?\b(?:completed|consummated|closed
 
 def direction_from_wording(marked_text: str):
     """ACQUISITION / ACQUIRED / DISPOSITION when the text says in so many words who became whose subsidiary ('Target became a wholly owned subsidiary of FILER')
-    or that the filer sold a business or assets; None when it does not. Checked on 1,855 training filings (consensus of two labelers: right 218 of 228
-    that fired) and 110 hand-labelled test filings (19 of 19)."""
+    or that the filer sold a business or assets; None when it does not. Checked on 1,855 training filings (where the two labelers agreed with each other it agreed with them in 218 of 224
+    cases, and I looked at the misfits by hand) and on 110 hand-labelled test filings (19 right, 0 wrong)."""
     for m in _SUB_OF_FILER.finditer(marked_text):
         if not re.search(r"FILER[^.]{0,25}$", marked_text[max(0, m.start() - 40):m.start()]):  # not 'FILER became a subsidiary of FILER' (namesake merger)
             return "ACQUISITION"
