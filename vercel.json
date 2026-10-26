@@ -13,6 +13,10 @@
     "api/yahoo.ts": {
       "maxDuration": 60,
       "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
+    },
+    "api/yahoobulk.ts": {
+      "maxDuration": 60,
+      "includeFiles": "node_modules/@sparticuz/chromium/bin/**"
     }
   }
 }
