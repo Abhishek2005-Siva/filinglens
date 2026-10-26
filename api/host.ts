@@ -56,6 +56,8 @@ interface AccountInfo {
   partial?: boolean // Kaggle could not answer part of the questions (too many requests); the numbers may be missing, not zero
 }
 
+const slowCache = new Map<string, { t: number; v: unknown }>()
+
 async function inspect(a: AccountDef): Promise<AccountInfo> {
   const base: AccountInfo = {
     id: a.id, label: a.label, main: !!a.main, configured: !!tokenOf(a), adaptersReady: false, extras: [],
@@ -63,11 +65,18 @@ async function inspect(a: AccountDef): Promise<AccountInfo> {
   }
   const token = tokenOf(a)
   if (!token) return { ...base, error: 'No Kaggle token configured for this account.' }
+  // dataset status and GPU quota change slowly, and they are most of the questions Kaggle gets (8 datasets per account): ask rarely, and keep the last
+  // good answer when Kaggle says 'too many requests'
+  const slow = <X,>(key: string, ttl: number, fn: () => Promise<X>): Promise<X> => {
+    const hit = slowCache.get(key)
+    if (hit && Date.now() - hit.t < ttl) return Promise.resolve(hit.v as X)
+    return fn().then((v) => { slowCache.set(key, { t: Date.now(), v }); return v }, (e) => { if (hit) return hit.v as X; throw e })
+  }
   const [quota, ds, ker, ...ex] = await Promise.allSettled([
-    kaggle(token, kernelsApi, 'GetAcceleratorQuotaStatistics', {}),
-    kaggle(token, datasetsApi, 'GetDatasetStatus', { ownerSlug: a.id, datasetSlug: DATASET_SLUG }),
+    slow(`q:${a.id}`, 60_000, () => kaggle(token, kernelsApi, 'GetAcceleratorQuotaStatistics', {})) as Promise<{ gpuQuota?: Record<string, string | undefined>; quotaRefreshTime?: string }>,
+    slow(`d:${a.id}:${DATASET_SLUG}`, 10 * 60_000, () => kaggle(token, datasetsApi, 'GetDatasetStatus', { ownerSlug: a.id, datasetSlug: DATASET_SLUG })) as Promise<{ status?: string }>,
     kaggle(token, kernelsApi, 'GetKernelSessionStatus', { userName: a.id, kernelSlug: KERNEL_SLUG }),
-    ...EXTRA_DATASETS.map((slug) => kaggle(token, datasetsApi, 'GetDatasetStatus', { ownerSlug: a.id, datasetSlug: slug })),
+    ...EXTRA_DATASETS.map((slug) => slow(`d:${a.id}:${slug}`, 10 * 60_000, () => kaggle(token, datasetsApi, 'GetDatasetStatus', { ownerSlug: a.id, datasetSlug: slug }))),
   ])
   const out = { ...base }
   if (quota.status === 'fulfilled') {
