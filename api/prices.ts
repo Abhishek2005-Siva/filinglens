@@ -20,7 +20,7 @@ export function parseYahooCsv(csv: string): Record<string, number> {
   for (const l of lines.slice(1, 6001)) {
     const c = splitCsv(l)
     const raw = (c[di] || '').trim().replace(/"/g, '')
-    const d = /^\d{4}-\d{2}-\d{2}/.test(raw) ? raw.slice(0, 10) : (() => { const t = Date.parse(raw); return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : '' })()
+    const d = /^\d{4}-\d{2}-\d{2}/.test(raw) ? raw.slice(0, 10) : (() => { const t = Date.parse(raw); if (!Number.isFinite(t)) return ''; const x = new Date(t); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}` })()
     const p = Number((c[ci] || '').replace(/[",$]/g, ''))
     if (d && p > 0) out[d] = Math.round(p * 10000) / 10000
   }
