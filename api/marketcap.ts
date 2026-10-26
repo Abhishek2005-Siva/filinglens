@@ -1,14 +1,13 @@
-import { get, put } from '@vercel/blob'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { requireAccess } from './_auth.js'
 import { manualFor } from './manual.js'
-import { fresh, importedPrices } from './prices.js'
+import { importedPrices } from './prices.js'
 import { UA, noDashes, one, padCik, secFetch } from './_sec.js'
 
 // Market value of a company on a date, worked out two ways so they can be compared:
 //   shares  = the cover-page share count from the company's latest 10-K / 10-Q filed on or before the date (SEC XBRL, dei:EntityCommonStockSharesOutstanding)
 //   method 1 (SEC only)  price = the latest priced insider trade (Form 4, open-market buy/sell or tax-withholding) in the 120 days up to the date
-//   method 2 (licensed)  price = the closing price on that day (or the last trading day before it) from Tiingo (needs the free TIINGO_TOKEN key)
+//   method 2 (Yahoo)     price = the closing price on that day (or the last trading day before it) read from Yahoo Finance's public page; a person can type it in if that fails
 // GET ?cik=320193&date=2025-02-10
 const DAY = 86_400_000
 const t = (ms = 9000) => AbortSignal.timeout(ms)
@@ -60,41 +59,16 @@ async function secPrice(cik: string, date: string) {
   return { ticker: j.tickers?.[0] ?? '', name: j.name ?? '', price: Math.round(price * 100) / 100, priceDate: day, daysOld: Math.round((Date.parse(date) - Date.parse(day)) / DAY), trades: same.length, accession: same[0].acc }
 }
 
-/** Closing price from a licensed data provider (Tiingo, free key): the last trading day on or before the date. A past close never changes, so each
- *  (ticker, date) is asked for once and then kept in the site's own storage. Yahoo is not used: it answers every automated request with HTTP 429. */
-async function closingPrice(ticker: string, date: string): Promise<{ price?: number; priceDate?: string; source?: string; cached?: boolean; error?: string }> {
+/** The closing price on or before the date, from the closes the site holds for the ticker: read from Yahoo Finance's public page (api/yahoo.ts, which stores
+ *  them) or uploaded from a Yahoo CSV. They expire (see prices.ts). Nothing is fetched here: when nothing is stored the card asks api/yahoo.ts to read
+ *  the page, and if that finds nothing the person can type the price in (api/manual.ts) or leave it empty. */
+async function closingPrice(ticker: string, date: string): Promise<{ price?: number; priceDate?: string; source?: string; error?: string }> {
   if (!ticker) return { error: 'no ticker for this company' }
-  // 1) prices a person downloaded from Yahoo Finance and uploaded to the site (Yahoo itself refuses automated requests)
   const mine = await importedPrices(ticker)
   const lo = new Date(Date.parse(date) - 10 * DAY).toISOString().slice(0, 10)
   const day = Object.keys(mine).filter((d) => d <= date && d >= lo).sort().pop()
   if (day) return { price: Math.round(mine[day] * 100) / 100, priceDate: day, source: 'Yahoo Finance' }
-  // 2) a licensed feed, if its key is set
-  const key = process.env.TIINGO_TOKEN || ''
-  if (!key) return { error: 'No Yahoo file uploaded for this ticker, and no price-feed key is set on the site.' }
-  const path = `prices/${ticker.toUpperCase().replace(/[^A-Z0-9.-]/g, '')}_${date}.json`
-  try {
-    const hit = await get(path, { access: 'private', useCache: false })
-    if (hit && hit.statusCode === 200) {
-      const c = JSON.parse(await new Response(hit.stream).text()) as { price: number; priceDate: string; at?: number }
-      if (fresh(c.at, c.priceDate)) return { price: c.price, priceDate: c.priceDate, source: 'Tiingo', cached: true } // older than the expiry: ask again
-    }
-  } catch { /* not stored yet, or storage not available */ }
-  const from = new Date(Date.parse(date) - 10 * DAY).toISOString().slice(0, 10)
-  try {
-    const r = await fetch(`https://api.tiingo.com/tiingo/daily/${encodeURIComponent(ticker)}/prices?startDate=${from}&endDate=${date}`, { headers: { Authorization: `Token ${key}`, 'Content-Type': 'application/json' }, signal: t() })
-    if (r.status === 404) return { error: 'Tiingo has no prices for this ticker (delisted or renamed?)' }
-    if (r.status === 429) return { error: 'Tiingo daily limit reached; try again later' }
-    if (!r.ok) return { error: `Tiingo answered HTTP ${r.status}` }
-    const rows = (await r.json()) as { date: string; close: number }[]
-    const best = rows.filter((x) => x.date.slice(0, 10) <= date && x.close > 0).sort((a, b) => b.date.localeCompare(a.date))[0]
-    if (!best) return { error: 'Tiingo returned no price for that date' }
-    const out = { price: Math.round(best.close * 100) / 100, priceDate: best.date.slice(0, 10), at: Date.now() }
-    try { await put(path, JSON.stringify(out), { access: 'private', allowOverwrite: true, addRandomSuffix: false, contentType: 'application/json' }) } catch { /* the answer still counts */ }
-    return { price: out.price, priceDate: out.priceDate, source: 'Tiingo' }
-  } catch (e) {
-    return { error: `Tiingo could not be reached: ${String(e).slice(0, 80)}` }
-  }
+  return { error: 'No stored Yahoo price for this ticker and date.' }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

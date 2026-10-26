@@ -2,7 +2,7 @@ import { del, get, list, put } from '@vercel/blob'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { requireAccess } from './_auth.js'
 
-// Closing prices kept by the site: the ones read from Yahoo Finance, the ones a person uploaded from a Yahoo CSV, and the ones fetched from a licensed feed.
+// Closing prices kept by the site: the ones read from Yahoo Finance's public page and the ones a person uploaded from a Yahoo CSV.
 // They are a cache, not a record, so they expire: a stored price is used for 7 days, or for 6 hours when it is for a day within the last 3 days (a recent
 // close can still be revised, and a split changes every earlier close). A daily job (see vercel.json) deletes what has expired. Values a person typed into a
 // filing's market-value card (api/manual.ts) are their own entries, not cache, and are never deleted by this.
@@ -98,10 +98,7 @@ async function cleanup() {
           else if (n < Object.keys(s?.rows ?? {}).length) { await put(b.pathname, JSON.stringify({ ...s, rows, at }), { access: 'private', allowOverwrite: true, addRandomSuffix: false, contentType: 'application/json' }); trimmed++ }
           else kept++
         } else {
-          // a single price from the licensed feed: {price, priceDate, at}
-          const r = await get(b.pathname, { access: 'private', useCache: false })
-          const s = r && r.statusCode === 200 ? (JSON.parse(await new Response(r.stream).text()) as { priceDate?: string; at?: number }) : null
-          if (!fresh(s?.at ?? b.uploadedAt.getTime(), s?.priceDate ?? '1970-01-01', now)) { await del(b.pathname); deleted++ } else kept++
+          await del(b.pathname); deleted++ // anything else under prices/ is left over from a feed that is no longer used
         }
       } catch { /* one unreadable file does not stop the cleanup */ }
     }
