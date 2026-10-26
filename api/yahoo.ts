@@ -33,7 +33,7 @@ async function accept(page: Page, log?: string[]) {
   if (btn) { await btn.click(); await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 12000 }).catch(() => undefined); log?.push('cookie dialog: pressed Accept all') }
 }
 
-interface Read { ok: boolean; rows: Record<string, number>; blocked?: string; error?: string; timings: Record<string, number>; log: string[]; title?: string }
+interface Read { needsScripts?: boolean; ok: boolean; rows: Record<string, number>; blocked?: string; error?: string; timings: Record<string, number>; log: string[]; title?: string }
 
 /** One company on one tab. `until` is the moment after which no more waiting is done. */
 async function readHistory(browser: Browser, it: Item, until: number, light = true): Promise<Read> {
@@ -51,7 +51,8 @@ async function readHistory(browser: Browser, it: Item, until: number, light = tr
     await accept(page, log)
     const tt = Date.now()
     const title = await page.title()
-    const head = `${title} ${(await page.evaluate(() => document.body?.innerText || '')).slice(0, 200)}`
+    const bodyText = (await page.evaluate(() => document.body?.innerText || '')).slice(0, 600)
+    const head = `${title} ${bodyText.slice(0, 200)}`
     if (BLOCKED.test(head)) return { ok: false, rows: {}, blocked: head.slice(0, 120), timings: tm, log, title }
     await page.waitForSelector('table tbody tr', { timeout: Math.max(3000, Math.min(15_000, until - Date.now())) }).catch(() => undefined)
     const cells: string[][] = await page.$$eval('table tbody tr', (trs) => trs.map((tr) => Array.from(tr.querySelectorAll('td')).map((td) => (td.textContent || '').trim())))
@@ -63,7 +64,7 @@ async function readHistory(browser: Browser, it: Item, until: number, light = tr
       if (Number.isFinite(t) && close > 0) rows[new Date(t).toISOString().slice(0, 10)] = close
     }
     log.push(`table rows read: ${Object.keys(rows).length}`)
-    return { ok: Object.keys(rows).length > 0, rows, timings: tm, log, title, ...(Object.keys(rows).length ? {} : { error: 'Yahoo showed no prices for this ticker and these dates (delisted, renamed or not listed there).' }) }
+    return { ok: Object.keys(rows).length > 0, rows, timings: tm, log, title, needsScripts: !Object.keys(rows).length && (/consent|guce/.test(page.url()) || !title || /accept all|cookie/i.test(bodyText)), ...(Object.keys(rows).length ? {} : { error: 'Yahoo showed no prices for this ticker and these dates (delisted, renamed or not listed there).' }) }
   } catch (e) {
     return { ok: false, rows: {}, error: String(e).slice(0, 160), timings: tm, log }
   } finally {
@@ -74,7 +75,7 @@ async function readHistory(browser: Browser, it: Item, until: number, light = tr
 /** Light mode first; if that finds no table (for example a cookie dialog that needs scripts), once more with the full page. */
 async function read(browser: Browser, it: Item, until: number): Promise<Read> {
   const a = await readHistory(browser, it, until, true)
-  if (a.ok || a.blocked || until - Date.now() < 12_000) return a
+  if (a.ok || a.blocked || !a.needsScripts || until - Date.now() < 12_000) return a // a delisted company shows an empty table: reading it again with the full page would not help
   const b = await readHistory(browser, it, until, false)
   b.timings = { ...b.timings, lightTryMs: Object.values(a.timings).reduce((x, y) => x + y, 0), fullPageRetry: 1 }
   return b.ok || b.blocked ? b : a
