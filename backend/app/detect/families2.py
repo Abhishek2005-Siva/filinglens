@@ -482,11 +482,16 @@ class Restructuring(Family):
             if not sec:
                 continue
             body = sec[:6000]
+            if re.search(r"(?i)^\W*item\s*2\.0[56]\W+(?:departure\s+of\s+directors|submission\s+of\s+matters|entry\s+into|changes\s+in\s+registrant|regulation\s+fd)", body[:160]):
+                continue  # a mistyped Item number (Vuzix: 'Item 2.06 Departure of Directors ...'): the text is about something else
             if it == "2.06" and secs.get("2.05") and len(body) < 400 and re.search(r"(?i)incorporated|set\s+forth|contained|described", body):
                 also_206 = True  # 'The information in Item 2.05 is incorporated into this Item 2.06': the same event, not a second one
                 continue
             p = _softmax_probs([body], tok, model, 512)[0]
             k = max(range(6), key=p.__getitem__)
+            if labels[k] == "DIVESTITURE" and re.search(r"(?i)\b(?:wind\s*(?:ing)?\s*down|cessation|discontinu\w+|ceas(?:e|ing))\b", body) and \
+                    not re.search(r"(?i)\b(?:sell|sold|sale|divest\w*|purchaser|buyer|acquirer)\b|dispos\w+\s+of\s+(?:the\s+|its\s+)?(?:business|segment|subsidiary|division)", body):
+                k = labels.index("DISCONTINUED_PRODUCT")  # closing a business is not selling it
             amount = charge_amount(body)
             plain_body = re.sub(r"^\s*item\s*2\.0[56][^\n]*\n", "", body, flags=re.IGNORECASE)
             sents = [s for s in re.split(r"(?<=[.!?])\s+", re.sub(r"\s+", " ", plain_body)) if len(s) > 30]

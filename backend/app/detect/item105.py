@@ -80,10 +80,13 @@ _NOT_MATERIAL = re.compile(
     r"(?i)\b(?:has|have|had|did|does|do)\s+not\s+(?:had\s+|have\s+|yet\s+had\s+)?(?:a\s+|any\s+)?material|not\s+reasonably\s+likely\s+to\s+(?:have\s+|materially\s+)|"
     r"\bno\s+material\s+(?:impact|effect|adverse)|\bnot\s+(?:been\s+)?(?:determined\s+to\s+be\s+)?material\b|does\s+not\s+believe[^.]{0,80}material")
 _MATERIAL = re.compile(
-    r"(?i)(?<!not\s)(?<!not\s{2})\b(?:is|are|was|were|be)\s+reasonably\s+likely\s+to\s+(?:have\s+|materially\s+)|"
+    r"(?i)(?<!not\s)(?<!not\s{2})\b(?:is|are|was|were|be)\s+(?:reasonably\s+)?likely\s+to\s+(?:have\s+|materially\s+)|"
     r"\bdetermined\s+that\s+(?:the\s+|this\s+)?(?:incident|event)[^.]{0,80}\b(?:is|was)\s+(?:a\s+)?material|"
     r"\b(?:has|have)\s+had\s+(?:a\s+)?material\s+(?:impact|effect)")
 _UNDER = re.compile(r"(?i)(?:not\s+(?:yet\s+)?(?:determined|concluded|able\s+to\s+determine)|unable\s+to\s+determine|has\s+not\s+yet\s+determined|still\s+(?:assessing|evaluating|determining))[^.]{0,80}(?:material(?:ity|ly)?|reasonably\s+likely)")
+
+
+_HEDGED = re.compile(r"(?i)\b(?:could|may|might)\s+(?:potentially\s+)?(?:have|result\s+in|become)\b[^.]{0,80}\bmaterial|potential\s+to\s+(?:have\s+)?(?:a\s+)?material")
 
 
 def stated_materiality(text: str):
@@ -102,6 +105,9 @@ def stated_materiality(text: str):
     for label in ("UNDER_ASSESSMENT", "NOT_MATERIAL", "MATERIAL"):
         if label in found:
             return label, found[label][:400]
+    for sent in sents:  # 'the incident could have the potential to have a material impact' is a company that has not decided yet
+        if _HEDGED.search(sent) and not re.search(r"(?i)forward-looking|could\s+cause\s+actual", sent):
+            return "UNDER_ASSESSMENT", sent[:400]
     return None
 
 

@@ -92,7 +92,7 @@ _DISMISS = re.compile(
     r"\bchange\s+(?:its|our|the\s+Company['’]s)\s+(?:independent\s+)?(?:registered\s+)?(?:public\s+)?"
     r"(?:accounting\s+firm|auditors?|accountants?)|"
     r"\b(?:not|no\s+longer)\s+(?:to\s+)?(?:re-?engage|re-?appoint|renew)\w*|\breplaced\b|"
-    r"\bwill\s+not\s+continue\s+as\b|\bretention\s+of\b[^.]{0,160}?\bended\b)"
+    r"\bwill\s+not\s+continue\s+as\b|\bretention\s+of\b[^.]{0,160}?\bended\b|\bregistration\b[\s\S]{0,200}?\b(?:revoked|withdrawn)\b)"
 )
 # "the Board requested that PwC resign" / "In light of the appointment of X, EY will cease
 # serving" are company-initiated changes even though they use resignation vocabulary.
@@ -306,7 +306,7 @@ _SELF_DEFINITION = re.compile(r"\s*\(\s*(?:the\s+|“\s*the\s+)?[“\"']?\s*(?:C
 
 
 _NEW_OBJECT_AFTER_FIRM = re.compile(
-    r"(?i:engag(?:e|ed|ing)|appoint(?:ed|ing)?|retain(?:ed|ing)?|select(?:ed|ing)?)\s+(?:the\s+|as\s+its\s+)?(?:new\s+)?(?:independent\s+)?(?:registered\s+)?(?:public\s+)?"
+    r"(?i:engag(?:e|ed|ing|ement\s+of)|appoint(?:ed|ing|ment\s+of)?|retain(?:ed|ing)?|select(?:ed|ing)?)\s+(?:the\s+|as\s+its\s+)?(?:new\s+)?(?:independent\s+)?(?:registered\s+)?(?:public\s+)?"
     r"(?:accounting\s+firm|accountants?|auditors?),?\s+" + _OBJ_NAME)
 
 
