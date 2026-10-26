@@ -18,9 +18,15 @@ const DEADLINE_MS = 40_000
 async function launch(): Promise<Browser> {
   return puppeteer.launch({ args: chromium.args, executablePath: await chromium.executablePath(), headless: 'shell', defaultViewport: { width: 1280, height: 900 } })
 }
-async function lean(page: Page) {
+/** Pictures, fonts and video are never needed. In the light mode scripts and style sheets are skipped too: the price table is already in the page that Yahoo
+ *  sends, so the page opens in a fraction of the time and uses very little processor (which is what limits how many tabs can work side by side). */
+async function lean(page: Page, light: boolean) {
   await page.setRequestInterception(true)
-  page.on('request', (r) => { ['image', 'media', 'font'].includes(r.resourceType()) ? void r.abort() : void r.continue() })
+  page.on('request', (r) => {
+    const t = r.resourceType()
+    ;['image', 'media', 'font'].includes(t) || (light && ['script', 'stylesheet'].includes(t)) ? void r.abort() : void r.continue()
+  })
+  if (light) await page.setJavaScriptEnabled(false)
 }
 async function accept(page: Page, log?: string[]) {
   const btn = (await page.$('button[name="agree"]')) || (await page.$('button.accept-all'))
@@ -30,12 +36,12 @@ async function accept(page: Page, log?: string[]) {
 interface Read { ok: boolean; rows: Record<string, number>; blocked?: string; error?: string; timings: Record<string, number>; log: string[]; title?: string }
 
 /** One company on one tab. `until` is the moment after which no more waiting is done. */
-async function readHistory(browser: Browser, it: Item, until: number): Promise<Read> {
+async function readHistory(browser: Browser, it: Item, until: number, light = true): Promise<Read> {
   const tm: Record<string, number> = {}, log: string[] = []
   const t0 = Date.now()
   const page = await browser.newPage()
   try {
-    await lean(page)
+    await lean(page, light)
     tm.tabMs = Date.now() - t0
     const p1 = Math.floor(Date.parse(it.from) / 1000), p2 = Math.floor(Date.parse(it.to) / 1000) + 86_400
     const tg = Date.now()
@@ -65,6 +71,15 @@ async function readHistory(browser: Browser, it: Item, until: number): Promise<R
   }
 }
 
+/** Light mode first; if that finds no table (for example a cookie dialog that needs scripts), once more with the full page. */
+async function read(browser: Browser, it: Item, until: number): Promise<Read> {
+  const a = await readHistory(browser, it, until, true)
+  if (a.ok || a.blocked || until - Date.now() < 12_000) return a
+  const b = await readHistory(browser, it, until, false)
+  b.timings = { ...b.timings, lightTryMs: Object.values(a.timings).reduce((x, y) => x + y, 0), fullPageRetry: 1 }
+  return b.ok || b.blocked ? b : a
+}
+
 const closeSoon = (b: Browser | null) => (b ? Promise.race([b.close().catch(() => undefined), new Promise((r) => setTimeout(r, 1500))]) : undefined)
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -88,7 +103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         while (!blocked && next < items.length && Date.now() < until - 8000) {
           const it = items[next++]
           const ts = Date.now()
-          const r = await readHistory(browser!, it, until)
+          const r = await read(browser!, it, until)
           if (r.blocked) blocked = r.blocked
           if (r.ok) await storePrices(it.ticker, r.rows)
           out.push({ ticker: it.ticker, to: it.to, ok: r.ok, days: Object.keys(r.rows).length, ms: Date.now() - ts, ...(r.blocked ? { error: 'blocked' } : r.error ? { error: r.error } : {}) })
@@ -108,13 +123,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!valid({ ticker, from, to })) return res.status(400).json({ error: 'bad_request', message: 'Give ?ticker=AAPL&from=YYYY-MM-DD&to=YYYY-MM-DD.' })
     browser = await launch()
     const launchMs = Date.now() - t0
-    const r = await readHistory(browser, { ticker, from, to }, until)
+    const r = await read(browser, { ticker, from, to }, until)
     let marketCap: string | null = null
     const tm = { launchMs, ...r.timings } as Record<string, number>
     if (r.ok && one(req.query.quote) && Date.now() < until - 6000) {
       const page = await browser.newPage()
       try {
-        await lean(page)
+        await lean(page, false)
         await page.goto(`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/`, { waitUntil: 'domcontentloaded', timeout: 15000 })
         await accept(page)
         marketCap = await page.evaluate(() => {
