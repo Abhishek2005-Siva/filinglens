@@ -59,7 +59,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         indexUrl: indexUrl(cikRaw, adsh),
       })
     }
-    res.setHeader('Cache-Control', 'public, s-maxage=300')
+    res.setHeader('Cache-Control', 'private, max-age=300')
     return res.status(200).json({
       total: data.hits.total.value,
       from,

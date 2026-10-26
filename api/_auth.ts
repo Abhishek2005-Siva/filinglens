@@ -74,6 +74,7 @@ export function sessionOf(req: VercelRequest): Session {
 /** True when the visitor may use the API; otherwise answers 401 (no password) or 403 (no location) and returns false. */
 export function requireAccess(req: VercelRequest, res: VercelResponse, opts: { location?: boolean } = {}): boolean {
   const s = sessionOf(req)
+  res.setHeader('Cache-Control', 'no-store') // never let the CDN keep an answer that is behind the sign-in
   if (!s.auth) {
     res.status(401).json({ error: 'auth_required', message: 'Please sign in.' })
     return false

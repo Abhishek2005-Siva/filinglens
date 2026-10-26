@@ -37,7 +37,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (s) scored.push({ c, s })
     }
     scored.sort((a, b) => b.s - a.s || a.c.name.localeCompare(b.c.name))
-    res.setHeader('Cache-Control', 'public, s-maxage=3600, stale-while-revalidate=86400')
+    res.setHeader('Cache-Control', 'private, max-age=3600')
     return res.status(200).json({ companies: scored.slice(0, 8).map((x) => x.c) })
   } catch (e) {
     return res.status(502).json({ error: 'Could not reach the SEC company list.', detail: String(e) })
