@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 interface Price { price?: number; priceDate?: string; daysOld?: number; trades?: number; accession?: string; marketCap: number | null; error?: string; source?: string }
 interface Cap {
@@ -16,6 +16,8 @@ const num = (v: number) => v.toLocaleString('en-US')
 export default function MarketCap({ cik, date }: { cik: string; date: string }) {
   const [d, setD] = useState<Cap | null>(null)
   const [err, setErr] = useState('')
+  const [tick, setTick] = useState(0)
+  const [note, setNote] = useState('')
   useEffect(() => {
     let gone = false
     setD(null); setErr('')
@@ -23,7 +25,15 @@ export default function MarketCap({ cik, date }: { cik: string; date: string }) 
       .then(async (r) => { const b = await r.json(); if (!r.ok) throw new Error(b.message ?? 'failed'); if (!gone) setD(b) })
       .catch((e) => { if (!gone) setErr(e instanceof Error ? e.message : 'Could not load.') })
     return () => { gone = true }
-  }, [cik, date])
+  }, [cik, date, tick])
+  const upload = useCallback(async (file: File | undefined) => {
+    if (!file || !d?.ticker) return
+    setNote('Reading the file…')
+    const r = await fetch('/api/prices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticker: d.ticker, csv: await file.text() }) })
+    const b = await r.json().catch(() => ({}))
+    setNote(r.ok ? `Saved ${b.added} days for ${b.ticker} (${b.first} to ${b.last}).` : b.message ?? 'Could not save that file.')
+    if (r.ok) setTick((n) => n + 1)
+  }, [d?.ticker])
   return (
     <section className="card mcap" aria-label="Market value">
       <h3>Market value on the filing date{d?.ticker ? ` (${d.ticker})` : ''}</h3>
@@ -53,6 +63,13 @@ export default function MarketCap({ cik, date }: { cik: string; date: string }) 
               </tbody>
             </table>
           </div>
+          {d.market.price == null && d.ticker && (
+            <p className="muted small">
+              Yahoo does not let the site fetch prices itself. Download the daily history for {d.ticker} from Yahoo Finance (Historical data → Download) and add it here:{' '}
+              <input type="file" accept=".csv,text/csv" onChange={(e) => void upload(e.target.files?.[0])} aria-label={`Yahoo price file for ${d.ticker}`} />
+            </p>
+          )}
+          {note && <p className="muted small" role="status">{note}</p>}
           {d.differencePct != null && <p className="muted small">The SEC-only value is {d.differencePct > 0 ? '+' : ''}{d.differencePct}% from the closing-price value. Both use the same share count, so the gap is only the price.</p>}
         </>
       )}

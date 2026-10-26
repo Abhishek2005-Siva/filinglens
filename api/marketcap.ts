@@ -1,6 +1,7 @@
 import { get, put } from '@vercel/blob'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { requireAccess } from './_auth.js'
+import { importedPrices } from './prices.js'
 import { UA, noDashes, one, padCik, secFetch } from './_sec.js'
 
 // Market value of a company on a date, worked out two ways so they can be compared:
@@ -62,8 +63,14 @@ async function secPrice(cik: string, date: string) {
  *  (ticker, date) is asked for once and then kept in the site's own storage. Yahoo is not used: it answers every automated request with HTTP 429. */
 async function closingPrice(ticker: string, date: string): Promise<{ price?: number; priceDate?: string; source?: string; cached?: boolean; error?: string }> {
   if (!ticker) return { error: 'no ticker for this company' }
+  // 1) prices a person downloaded from Yahoo Finance and uploaded to the site (Yahoo itself refuses automated requests)
+  const mine = await importedPrices(ticker)
+  const lo = new Date(Date.parse(date) - 10 * DAY).toISOString().slice(0, 10)
+  const day = Object.keys(mine).filter((d) => d <= date && d >= lo).sort().pop()
+  if (day) return { price: Math.round(mine[day] * 100) / 100, priceDate: day, source: 'Yahoo (file you uploaded)' }
+  // 2) a licensed feed, if its key is set
   const key = process.env.TIINGO_TOKEN || ''
-  if (!key) return { error: 'No price-data key is set on the site yet (TIINGO_TOKEN).' }
+  if (!key) return { error: 'No Yahoo file uploaded for this ticker, and no price-feed key is set on the site.' }
   const path = `prices/${ticker.toUpperCase().replace(/[^A-Z0-9.-]/g, '')}_${date}.json`
   try {
     const hit = await get(path, { access: 'private', useCache: false })
