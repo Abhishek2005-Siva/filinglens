@@ -27,6 +27,13 @@ async function shares(cik: string, date: string) {
   return { value: classes.reduce((a, b) => a + b, 0), classes: classes.length, asOf: latest.end, filed: latest.filed, form: latest.form, accession: latest.accn }
 }
 
+async function tickerOf(cik: string): Promise<{ ticker: string; name: string }> {
+  const r = await secFetch(`https://data.sec.gov/submissions/CIK${padCik(cik)}.json`)
+  if (!r.ok) return { ticker: '', name: '' }
+  const j = (await r.json()) as { tickers?: string[]; name?: string }
+  return { ticker: j.tickers?.[0] ?? '', name: j.name ?? '' }
+}
+
 async function secPrice(cik: string, date: string) {
   const sub = await secFetch(`https://data.sec.gov/submissions/CIK${padCik(cik)}.json`)
   if (!sub.ok) return { error: `SEC submissions ${sub.status}` }
@@ -77,6 +84,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const cik = one(req.query.cik).replace(/\D/g, '')
   const date = one(req.query.date) || new Date().toISOString().slice(0, 10)
   if (!cik || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'bad_request', message: 'Give ?cik=…&date=YYYY-MM-DD.' })
+  if (one(req.query.light)) {
+    // the quick version used for whole analyses: share count + the stored Yahoo price (or a typed-in value); no insider-trade search
+    try {
+      const t0 = Date.now()
+      const [sh0, tk, man] = await Promise.all([shares(cik, date), tickerOf(cik), manualFor(cik, date)])
+      const ticker = one(req.query.ticker) || tk.ticker
+      const yh0 = await closingPrice(ticker, date)
+      const sh = man.shares ? { value: man.shares, classes: 1, asOf: date, filed: date, form: 'entered by hand', accession: '' } : sh0
+      const yh = man.price ? { price: man.price, priceDate: date, source: 'Entered by hand' } : yh0
+      const p = 'price' in yh ? yh.price : undefined
+      return res.status(200).json({ cik, date, ticker, name: tk.name, shares: sh, market: { ...yh, marketCap: sh && p ? Math.round(sh.value * p) : null }, manual: { price: !!man.price, shares: !!man.shares }, light: true, timings: { totalMs: Date.now() - t0 } })
+    } catch (e) {
+      return res.status(502).json({ error: 'upstream', message: `Could not compute the market value: ${String(e).slice(0, 160)}` })
+    }
+  }
   try {
     const T = { start: Date.now(), shares: 0, sec: 0, price: 0, manual: 0 }
     const timed = async <X,>(k: 'shares' | 'sec', p: Promise<X>) => { const r = await p; T[k] = Date.now() - T.start; return r }
