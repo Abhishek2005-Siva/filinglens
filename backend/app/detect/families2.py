@@ -189,7 +189,7 @@ class Acquisition(Family):
         "ACQUIRED": "The company was acquired (merger or buyout closed)",
         "UNCLEAR": "A transaction was completed (direction not clear from the text)",
     }
-    experimental = "Spotting a completed deal is strong (F1 0.95); working out who bought whom is about 90% accurate."
+    experimental = "Spotting a completed deal is strong (F1 0.95). Who bought whom was right in 105 of 114 filings we read by hand (92%); a wording rule fixes the clear cases, and shell-company mergers stay a judgement call."
 
     def _load_models(self) -> None:
         self._sent = _load("acq_sent", 5)
@@ -274,7 +274,7 @@ class Agreements(Family):
     key, item, title = "agreements", "1.01 / 1.02", "Material agreement entered or ended"
     items = ["1.01", "1.02"]
     models = ["agree_events", "agree_types"]
-    experimental = "Spotting entered/terminated agreements is strong (F1 0.94 / 0.88); the agreement type is no better than simple rules (F1 0.75)."
+    experimental = "Spotting entered/terminated agreements is strong (F1 0.94 / 0.88); the agreement type is no better than simple rules (F1 0.75). Counterparty and amount are best-effort text patterns."
     TYPE_NAMES = {"MNA": "merger or acquisition", "DEBT": "debt or credit", "EQUITY": "equity or securities", "COMMERCIAL": "commercial or supply", "GOVERNANCE": "governance or employment"}
 
     def _load_models(self) -> None:
@@ -435,7 +435,7 @@ def stated_guidance_move(text: str):
 class Guidance(Family):
     key, item, title = "guidance", "2.02", "Earnings guidance direction"
     models = ["guidance"]
-    experimental = "Experimental: macro-F1 0.77 on its held-out set; it reads the first part of the earnings press release."
+    experimental = "Experimental: macro-F1 0.77 on its held-out set; it reads the first part of the earnings press release, plus a rule for releases that say \"raising our guidance\" in so many words."
     TITLES = {"RAISED": "Company raised its guidance", "LOWERED": "Company lowered its guidance", "REAFFIRMED": "Company reaffirmed its guidance", "WITHDRAWN": "Company withdrew its guidance"}
 
     def present(self, plain: str, tables: str) -> bool:
@@ -481,7 +481,7 @@ class Restructuring(Family):
     key, item, title = "restructuring", "2.05 / 2.06", "Restructuring, exit costs or impairment"
     items = ["2.05", "2.06"]
     models = ["restructuring"]
-    experimental = "Trained on 1,213 filings with a random split (macro-F1 0.86, accuracy 95% on held-out filings)."
+    experimental = "Trained on 1,213 filings with a random split (macro-F1 0.86, accuracy 95% on held-out filings). Right on 19 of 20 filings we read from March 2025; the charge amount is read only from sentences about charges."
     TITLES = {
         "WORKFORCE_REDUCTION": "Workforce reduction", "FACILITY_CLOSURE": "Facility closure", "DIVESTITURE": "Divestiture",
         "DISCONTINUED_PRODUCT": "Discontinued product or line", "IMPAIRMENT_ONLY": "Asset impairment charge", "OTHER": "Other exit or impairment activity",

@@ -30,8 +30,9 @@ export const detectors: DetectorInfo[] = [
       { label: 'New CEO: real events found', value: '98.3%' },
       { label: 'CEO leaving: alerts that were right', value: '84.1%' },
       { label: 'CEO leaving: real events found', value: '91.7%' },
+      { label: 'Hand-made sheet, 100 CEO/CFO rows (Jan–Feb 2025)', value: '99 right (was 84)' },
     ],
-    caveat: 'F1: new CEO 0.943, leaving 0.877 (before the retrain and checker: 0.930 and 0.873). The test filings are about half real events, but in real life only about 1 filing in 8 has a CEO change, so false alarms matter more than these scores show. The checker marks them.',
+    caveat: 'F1: new CEO 0.943, leaving 0.877 (before the retrain and checker: 0.930 and 0.873). The test filings are about half real events, but in real life only about 1 filing in 8 has a CEO change, so false alarms matter more than these scores show. The checker marks them. A second test: a hand-made answer sheet of 100 CEO and CFO appointments (Jan–Feb 2025, 91 filings). The live site got 84 right; after fixes for interim titles, Co-CEOs, "X succeeded Y" sentences, short sections that point to another Item and lists of officers it got 99 (only Ouster, whose 8-K has no Item 5.02, is missed). The rules were tuned on that sheet, so 99 is optimistic. In a read of 72 other answers from those months, about 28% of CEO answers repeated an earlier announcement or only gave pay terms; they are now marked "Needs review", not dropped.',
   },
   {
     key: 'bankruptcy',
@@ -46,8 +47,9 @@ export const detectors: DetectorInfo[] = [
       { label: 'Alerts that were right', value: '94.7%' },
       { label: 'Real events found', value: '96.0%' },
       { label: 'Held-out events tested', value: '149' },
+      { label: 'Blind read, March 2025 (12 filings)', value: '12 of 12 right' },
     ],
-    caveat: 'Receivership has only 9 test events. Small samples.',
+    caveat: 'Receivership has only 9 test events. Small samples. Blind read: we read 12 March 2025 filings ourselves before looking at the site. Earlier checks found three events missed when the two readers split (an unsure answer is now shown, marked "unsure").',
   },
   {
     key: 'delisting',
@@ -63,8 +65,9 @@ export const detectors: DetectorInfo[] = [
       { label: 'Delisted by exchange: right / found', value: '90% / 89%' },
       { label: 'Voluntary delisting: right / found', value: '95% / 99%' },
       { label: 'Compliance regained: right / found', value: '87% / 100%' },
+      { label: 'Blind read, March 2025 (20 filings): main label', value: '19 of 20 (the miss was my answer, not the site)' },
     ],
-    caveat: 'Exchange transfers are the weakest (74% right) and have only 19 test events.',
+    caveat: 'Exchange transfers are the weakest (74% right) and have only 19 test events. In the blind read the site often adds a second label (for example a deficiency notice next to a delisting notice), which is usually also true. The one "miss" was a going-private merger whose Item 3.01 was really an annual-meeting deficiency, which the site had right and I had wrong.',
   },
   {
     key: 'auditor',
@@ -80,8 +83,9 @@ export const detectors: DetectorInfo[] = [
       { label: 'Auditor resigned (F1)', value: '0.972' },
       { label: 'New auditor engaged (F1)', value: '0.982' },
       { label: 'Reportable event (F1)', value: '0.981' },
+      { label: 'Blind read, March 2025: who left / who was hired', value: '19 of 20 / 18 of 19' },
     ],
-    caveat: 'The AI scores about the same as the rules it learned from; "disagreement" is too rare to measure.',
+    caveat: 'The AI scores about the same as the rules it learned from; "disagreement" is too rare to measure. Reading real filings found the firm names were often wrong even when the flags were right (the company\'s own name taken as the auditor, the dismissed firm shown as the new one, a revoked registration not read as a dismissal, a heading written without the word "Item" so the section was missed); those are fixed. Still wrong: names with a comma (Aloba, Awomolo & Partners shown as Awomolo & Partners).',
   },
   {
     key: 'votes',
@@ -97,8 +101,9 @@ export const detectors: DetectorInfo[] = [
       { label: 'Auditor ratified (F1)', value: '0.991' },
       { label: 'Say-on-pay (F1)', value: '0.994' },
       { label: 'A proposal failed (F1)', value: '0.857' },
+      { label: 'Blind read, March 2025 (20 filings): every vote count shown is in the filing', value: '20 of 20' },
     ],
-    caveat: 'Mergers and adjournments are weaker (F1 about 0.77–0.78).',
+    caveat: 'Mergers and adjournments are weaker (F1 about 0.77–0.78). The vote counts themselves (For / Against) come from a table parser; reading 50 real filings showed it failed on several layouts (counts written as "Affirmative / Negative votes", blank or percent cells, split headers, a For / Against / Withheld table, small counts mistaken for percentages). Those layouts are fixed; results written only in sentences are still not read as counts.',
   },
   {
     key: 'cfo',
@@ -115,7 +120,7 @@ export const detectors: DetectorInfo[] = [
       { label: 'CFO leaving: alerts that were right', value: '88.6%' },
       { label: 'CFO leaving: real events found', value: '91.3%' },
     ],
-    caveat: 'These are the cross-validation numbers; the four models together have not been scored as one group.',
+    caveat: 'These are the cross-validation numbers; the four models together have not been scored as one group. On the hand-made Jan–Feb 2025 sheet (25 CFO and 25 interim-CFO rows) every row is now right except Ouster (the interim flag follows the new role, "X succeeded Y" gives X, a deputy CFO or a board seat for the sitting CFO is flagged); the sheet was used to tune those rules, so this is optimistic.',
     experimental: true,
   },
   {
@@ -133,8 +138,9 @@ export const detectors: DetectorInfo[] = [
       { label: 'Our spot check: completed, right / found', value: '95% / 98%' },
       { label: 'Our spot check: direction (39 filings)', value: '82%' },
       { label: 'Direction correct, hand-labelled (76 filings)', value: '86.8%' },
+      { label: 'Direction right, 114 hand-read filings (Jan–Mar 2025 + the 76)', value: '105 (92%)' },
     ],
-    caveat: 'Those months were used to tune the rules, so the first two figures are slightly optimistic. "Who bought whom" is the hardest part.',
+    caveat: 'Those months were used to tune the rules, so the first two figures are slightly optimistic. "Who bought whom" is the hardest part. In October 2026 we regenerated the training labels, found about 80% of the confident disagreements were errors in the old labels, and retrained five variants (cleaned labels, longer input): all landed at 91–94% on 110 hand-read filings, within noise, so the deployed model stayed. What we added is a wording rule ("X became a wholly owned subsidiary of the company", "the company completed the sale of …"): right on 19 of 19 hand-read filings and fixed both Star Equity filings. Still hard: shell-company and reverse mergers, where who is the acquirer is a judgement call.',
     experimental: true,
   },
   {
@@ -151,8 +157,10 @@ export const detectors: DetectorInfo[] = [
       { label: 'Agreement ended (F1)', value: '0.919' },
       { label: 'Kind of agreement entered (F1)', value: '0.883' },
       { label: 'Kind of agreement ended (F1)', value: '0.868' },
+      { label: 'Blind read, March 2025: entered found / kind right', value: '20 of 20 / 20 of 20' },
+      { label: 'Blind read, March 2025: ended found / kind right', value: '19 of 19 / 19 of 19' },
     ],
-    caveat: 'A small hand-labelled test (98 filings) and our own judgement calls: some types are debatable (lock-ups, settlements, debt-for-equity swaps). The 0.6 / 0.8 cut-offs were chosen on other months. If the filing readers are not loaded on the server it falls back to the older, weaker sentence readers.',
+    caveat: 'A small hand-labelled test (98 filings) and our own judgement calls: some types are debatable (lock-ups, settlements, debt-for-equity swaps). The 0.6 / 0.8 cut-offs were chosen on other months. If the filing readers are not loaded on the server it falls back to the older, weaker sentence readers. Reading real filings showed the counterparty was often a document name ("Restated Credit Agreement"), the amount was a share price or a par value, and a termination clause inside a new contract could show as "terminated"; a filing that declares Item 1.01 or 1.02 now always shows an entered or ended event, and amounts skip per-share prices. The counterparty is still sometimes a transfer agent or the wrong bank.',
     experimental: true,
   },
   {
@@ -168,6 +176,7 @@ export const detectors: DetectorInfo[] = [
       { label: 'Security type (F1)', value: '0.82' },
       { label: 'Exemption named (F1)', value: '0.83' },
       { label: 'Amount raised right (within 2%)', value: '16 of 20' },
+      { label: 'Blind read, March 2025: security type / exemption', value: '20 of 20 / 7 of 7' },
     ],
     caveat: 'Security type and exemption improved a lot (0.66 to 0.82 and 0.72 to 0.83; 0.81 and 0.81 on the two final months never used for tuning), but it is one model scored on only 57 filings, so expect about ±0.07. The amount is still read by text patterns and is wrong in 1 of 5. Falls back to the older sentence readers if the filing reader is not loaded.',
     experimental: true,
@@ -184,8 +193,9 @@ export const detectors: DetectorInfo[] = [
     metrics: [
       { label: 'Overall accuracy', value: '90.6%' },
       { label: 'Macro-F1 (balance over 5 outcomes)', value: '0.770' },
+      { label: 'Blind read, March 2025 (20 releases)', value: '20 of 20' },
     ],
-    caveat: '"Lowered" is the weakest outcome (only 10 test examples).',
+    caveat: '"Lowered" is the weakest outcome (only 10 test examples). In the blind read 17 of 20 releases gave no change in guidance, so that score says little about the raised / lowered calls. The reader only sees the first part of the release, and missed "raising our 2025 guidance" in one filing; when the release says so in its own words ("raising our … guidance") that wording now overrides a "no change" answer.',
     experimental: true,
   },
   {
@@ -200,8 +210,9 @@ export const detectors: DetectorInfo[] = [
     metrics: [
       { label: 'Accuracy', value: '95.4%' },
       { label: 'Macro-F1 (balance over 6 types)', value: '0.864' },
+      { label: 'Blind read, March 2025 (20 filings): type', value: '19 of 20' },
     ],
-    caveat: 'Random split, so slightly optimistic compared with testing on a later month.',
+    caveat: 'Random split, so slightly optimistic compared with testing on a later month. Reading real filings found the "amount" was often a saving, a loan balance or a monthly volume instead of the charge (now only charge sentences count), a business being wound down was called a divestiture (fixed by a wording rule), and a filing with a mistyped heading ("Item 2.06 Departure of Directors") was read as an impairment (now skipped).',
     experimental: true,
   },
   {
@@ -218,7 +229,7 @@ export const detectors: DetectorInfo[] = [
       { label: 'Not material: right / found (F1)', value: '48% / 61% (0.54)' },
       { label: 'Still assessing: right / found (F1)', value: '33% / 9% (0.14)' },
     ],
-    caveat: '"Still assessing" is close to a coin flip — only 11 examples exist. Trust "material" / "not material" calls far more than that third category.',
+    caveat: '"Still assessing" is close to a coin flip — only 11 examples exist. Trust "material" / "not material" calls far more than that third category. The model is nearly undecided on most filings, so when the Item says it in its own words ("has not had a material impact", "is likely to have a material impact", "could have the potential to have a material impact" = still assessing) that wording now decides. In our read of 4 real filings (2 in Jan–Feb, 2 in March 2025) it was right on all 4 once the wording rule was added; the model alone got 2.',
     experimental: true,
   },
 ]

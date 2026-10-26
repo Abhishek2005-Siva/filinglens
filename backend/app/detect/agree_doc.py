@@ -89,7 +89,7 @@ def decide(probs: List[float]) -> Dict[str, list]:
 
 class AgreementsV2(Agreements):
     models = ["agree_events", "agree_types", "agree_doc_s42", "agree_doc_s7"]
-    experimental = ("Finds agreements entered and ended well (F1 0.99 / 0.92 on 98 filings checked by hand); naming the agreement types is "
+    experimental = ("Finds agreements entered and ended well (F1 0.99 / 0.92 on 98 filings checked by hand; every event found in a blind read of 39 March 2025 filings); naming the agreement types is "
                     "good but not perfect (F1 about 0.85-0.89 entered, 0.87 ended).")
 
     def _load_models(self) -> None:

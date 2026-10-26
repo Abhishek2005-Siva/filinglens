@@ -118,7 +118,9 @@ class CyberIncident(Family):
         "Experimental: trained on only 55 filings (the full population of this disclosure "
         "since it became mandatory in Dec 2023). Reliable for MATERIAL vs. NOT_MATERIAL "
         "(macro F1 ~0.58 each on 5-fold cross-validation); the UNDER_ASSESSMENT category is "
-        "close to a coin flip (11 examples total) and should not be trusted."
+        "close to a coin flip (11 examples total) and should not be trusted. When the Item states its "
+        "own conclusion in words (\"has not had a material impact\", \"is likely to have a material impact\", "
+        "\"could have the potential to\" = still assessing), those words decide."
     )
 
     def _load_models(self) -> None:
