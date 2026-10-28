@@ -9,7 +9,7 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
-  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "filinglens-data" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "filinglens", "database_id": "1125ef53-a142-41a0-ab97-4f91291c0c7c" }],
   "browser": { "binding": "BROWSER" },
   "triggers": { "crons": ["0 3 * * *"] },
   "vars": { "STORAGE_READY": "1" },

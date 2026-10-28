@@ -1,31 +1,42 @@
-// A stand-in for @vercel/blob that keeps the same calls (get, put, list, del) but stores the files in a Cloudflare R2 bucket. The site's functions are
-// shared between Vercel and Cloudflare, so wrangler.jsonc points the import "@vercel/blob" here.
+// A stand-in for @vercel/blob that keeps the same calls (get, put, list, del) but stores the files as rows of a Cloudflare D1 database (free, no payment
+// method needed). The site's functions are shared between Vercel and Cloudflare, so wrangler.jsonc points the import "@vercel/blob" here.
 import { env } from 'cloudflare:workers'
 
-interface Bucket {
-  get(key: string): Promise<{ body: ReadableStream; size: number; uploaded: Date } | null>
-  put(key: string, value: string | ArrayBuffer | ReadableStream, opts?: { httpMetadata?: { contentType?: string } }): Promise<unknown>
-  delete(keys: string | string[]): Promise<void>
-  list(opts?: { prefix?: string; limit?: number; cursor?: string }): Promise<{ objects: { key: string; size: number; uploaded: Date }[]; truncated: boolean; cursor?: string }>
-}
-const bucket = (): Bucket => (env as unknown as { BUCKET: Bucket }).BUCKET
+interface Stmt { bind(...v: unknown[]): Stmt; first<T = Record<string, unknown>>(): Promise<T | null>; all<T = Record<string, unknown>>(): Promise<{ results: T[] }>; run(): Promise<unknown> }
+interface Db { prepare(sql: string): Stmt; exec(sql: string): Promise<unknown>; batch(s: Stmt[]): Promise<unknown> }
+const db = (): Db => (env as unknown as { DB: Db }).DB
+
+let ready: Promise<unknown> | null = null
+const init = () => (ready ??= db().exec('CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, body TEXT NOT NULL, type TEXT, updated INTEGER)'))
 
 export async function get(pathname: string, _opts?: unknown) {
-  const o = await bucket().get(pathname)
-  if (!o) return null
-  return { statusCode: 200 as const, stream: o.body, blob: { pathname, size: o.size, uploadedAt: o.uploaded } }
+  await init()
+  const row = await db().prepare('SELECT body, updated FROM files WHERE path = ?').bind(pathname).first<{ body: string; updated: number }>()
+  if (!row) return null
+  return { statusCode: 200 as const, stream: new Response(row.body).body as ReadableStream, blob: { pathname, size: row.body.length, uploadedAt: new Date(row.updated) } }
 }
 
 export async function put(pathname: string, body: string | ArrayBuffer, opts: { contentType?: string } = {}) {
-  await bucket().put(pathname, body, { httpMetadata: { contentType: opts.contentType ?? 'application/octet-stream' } })
+  await init()
+  const text = typeof body === 'string' ? body : new TextDecoder().decode(body)
+  await db().prepare('INSERT INTO files (path, body, type, updated) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(path) DO UPDATE SET body = ?2, type = ?3, updated = ?4')
+    .bind(pathname, text, opts.contentType ?? 'application/json', Date.now()).run()
   return { pathname, url: '' }
 }
 
 export async function list(opts: { prefix?: string; limit?: number; cursor?: string } = {}) {
-  const r = await bucket().list({ prefix: opts.prefix, limit: opts.limit ?? 1000, cursor: opts.cursor })
-  return { blobs: r.objects.map((o) => ({ pathname: o.key, size: o.size, uploadedAt: o.uploaded })), cursor: r.truncated ? r.cursor : undefined, hasMore: r.truncated }
+  await init()
+  const limit = opts.limit ?? 1000
+  const offset = Number(opts.cursor) || 0
+  const prefix = opts.prefix ?? ''
+  const { results } = await db().prepare('SELECT path, length(body) AS size, updated FROM files WHERE substr(path, 1, length(?1)) = ?1 ORDER BY path LIMIT ?2 OFFSET ?3')
+    .bind(prefix, limit + 1, offset).all<{ path: string; size: number; updated: number }>()
+  const more = results.length > limit
+  return { blobs: results.slice(0, limit).map((r) => ({ pathname: r.path, size: r.size, uploadedAt: new Date(r.updated) })), cursor: more ? String(offset + limit) : undefined, hasMore: more }
 }
 
 export async function del(pathname: string | string[]) {
-  await bucket().delete(pathname)
+  await init()
+  const paths = Array.isArray(pathname) ? pathname : [pathname]
+  for (let i = 0; i < paths.length; i += 50) await db().batch(paths.slice(i, i + 50).map((p) => db().prepare('DELETE FROM files WHERE path = ?').bind(p)))
 }
