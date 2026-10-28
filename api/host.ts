@@ -1,7 +1,5 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative } from 'node:path'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { strToU8, zipSync } from 'fflate'
+import { backend } from './_backend.js'
 import { requireAccess } from './_auth.js'
 import { ACCOUNTS, DATASET_SLUG, EXTRA_DATASETS, KERNEL_SLUG, type AccountDef } from './_accounts.js'
 import { datasetsApi, kaggle, KaggleError, kernelsApi, seconds } from './_kaggle.js'
@@ -151,33 +149,22 @@ async function runningOn(): Promise<string | null> {
   return states.find(Boolean) ?? null
 }
 
-const listFiles = (dir: string): string[] =>
-  readdirSync(dir).flatMap((n) => {
-    const p = join(dir, n)
-    if (n === '__pycache__' || n.endsWith('.pyc')) return []
-    return statSync(p).isDirectory() ? listFiles(p) : [p]
-  })
-
 /** The kernel script with the app code and secrets filled in (never logged or returned). */
-function buildScript(runHours: number): string {
-  const root = process.cwd()
-  const backend = join(root, 'backend')
-  const files: Record<string, Uint8Array> = {}
-  for (const f of listFiles(join(backend, 'app'))) files[relative(backend, f).split('\\').join('/')] = new Uint8Array(readFileSync(f))
-  const zip = Buffer.from(zipSync(files, { level: 6 })).toString('base64')
+function buildScript(runHours: number, site: string): string {
+  const { appZipB64: zip, template } = backend()
   const need = (k: string) => {
     const v = process.env[k]
     if (!v) throw new Error(`The server setting ${k} is missing.`)
     return v
   }
-  let s = readFileSync(join(backend, 'kaggle', 'server_template.py'), 'utf8')
+  let s = template
   const rep: Record<string, string> = {
     __APP_B64__: zip,
     __API_KEY__: need('MODEL_API_KEY'),
     __SEC_UA__: need('SEC_USER_AGENT'),
     __NGROK_TOKEN__: need('NGROK_AUTHTOKEN'),
     __NGROK_DOMAIN__: need('NGROK_DOMAIN'),
-    __SITE_URL__: process.env.SITE_URL || 'https://ui-ebon-theta.vercel.app',
+    __SITE_URL__: process.env.SITE_URL || site,
     __RUN_HOURS__: String(runHours),
     __IDLE_MINUTES__: String(IDLE_MINUTES),
   }
@@ -185,11 +172,11 @@ function buildScript(runHours: number): string {
   return s
 }
 
-async function pushKernel(a: AccountDef, runHours: number, extras: string[] = []) {
+async function pushKernel(a: AccountDef, runHours: number, site: string, extras: string[] = []) {
   return kaggle<{ url?: string; versionNumber?: number; error?: string }>(tokenOf(a), kernelsApi, 'SaveKernel', {
     slug: `${a.id}/${KERNEL_SLUG}`,
     newTitle: KERNEL_SLUG,
-    text: buildScript(runHours),
+    text: buildScript(runHours, site),
     language: 'python',
     kernelType: 'script',
     isPrivate: true,
@@ -234,6 +221,7 @@ const eligible = (i: AccountInfo) => i.configured && i.adaptersReady && i.kernel
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store')
   if (req.method !== 'POST') return res.status(405).json({ error: 'method', message: 'Use POST.' })
+  const site = `https://${String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost')}`
   const body = (req.body ?? {}) as { action?: string; account?: string; runHours?: number; dryRun?: boolean; except?: string; cancel?: boolean; force?: boolean }
   if (body.action !== 'register' && !requireAccess(req, res)) return // the model server itself announces its address with the shared API key instead of a sign-in
   try {
@@ -315,13 +303,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       const runHours = Math.max(1, Math.min(Number(body.runHours) || DEFAULT_RUN_HOURS, Math.floor(info.remainingHours - 0.25)))
       if (body.dryRun) {
-        const script = buildScript(runHours) // proves the app code and secrets are all available; nothing is pushed or stopped
+        const script = buildScript(runHours, site) // proves the app code and secrets are all available; nothing is pushed or stopped
         return res.status(200).json({ ok: true, dryRun: true, account: wanted, runHours, scriptKB: Math.round(script.length / 1024), remainingHours: info.remainingHours })
       }
       // leftovers on other accounts (finished or older runs) are cleared so only one server can hold the public address
       await stopRunning(infos.filter((i) => i.id !== wanted))
       try {
-        const r = await pushKernel(def, runHours, info.extras)
+        const r = await pushKernel(def, runHours, site, info.extras)
         if (r.error) throw new KaggleError(400, r.error)
         return res.status(200).json({ ok: true, account: wanted, runHours, url: r.url, remainingHours: info.remainingHours, skipped: [], bootMinutes: 3 })
       } catch (e) {

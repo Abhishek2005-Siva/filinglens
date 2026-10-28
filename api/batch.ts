@@ -119,7 +119,7 @@ async function doneAccessions(meta: Meta): Promise<string[]> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!requireAccess(req, res)) return
   res.setHeader('Cache-Control', 'no-store')
-  if (!process.env.BLOB_READ_WRITE_TOKEN) return res.status(503).json({ error: 'not_configured', message: 'Analysis storage is not connected yet.' })
+  if (!process.env.BLOB_READ_WRITE_TOKEN && !process.env.STORAGE_READY) return res.status(503).json({ error: 'not_configured', message: 'Analysis storage is not connected yet.' })
   try {
     // ---------------------------------------------------------------- reading
     if (req.method === 'GET') {

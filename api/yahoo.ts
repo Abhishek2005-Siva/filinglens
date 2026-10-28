@@ -1,5 +1,5 @@
-import chromium from '@sparticuz/chromium'
-import puppeteer, { type Browser, type Page } from 'puppeteer-core'
+import type { Browser, Page } from 'puppeteer-core'
+import { launchBrowser } from './_browser.js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { requireAccess } from './_auth.js'
 import { storePrices } from './prices.js'
@@ -15,9 +15,7 @@ const valid = (i: Item) => /^[A-Z0-9.-]{1,10}$/.test(i.ticker) && /^\d{4}-\d{2}-
 const BLOCKED = /too many requests|unusual traffic|captcha|access denied|robot/i
 const DEADLINE_MS = 40_000
 
-async function launch(): Promise<Browser> {
-  return puppeteer.launch({ args: chromium.args, executablePath: await chromium.executablePath(), headless: 'shell', defaultViewport: { width: 1280, height: 900 } })
-}
+const launch = (): Promise<Browser> => launchBrowser()
 /** Pictures, fonts and video are never needed. In the light mode scripts and style sheets are skipped too: the price table is already in the page that Yahoo
  *  sends, so the page opens in a fraction of the time and uses very little processor (which is what limits how many tabs can work side by side). */
 async function lean(page: Page, light: boolean) {

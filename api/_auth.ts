@@ -10,14 +10,18 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 const SALT = 'filinglens-login-v1'
 const MAX_AGE = 30 * 24 * 3600
 const passwordHash = () => process.env.SITE_PASSWORD_HASH || ''
+// A quicker check for hosts that allow only a few milliseconds of processor time per request (Cloudflare's free plan): HMAC-SHA256 of the password
+// with a fixed key, kept in SITE_PASSWORD_HMAC (made by cf/make-secret.mjs). It lives in the environment, never in the code.
+const passwordHmac = () => process.env.SITE_PASSWORD_HMAC || ''
 const secret = () => (process.env.AUTH_SECRET || process.env.MODEL_API_KEY || '')
 
 /** False until the site owner has set SITE_PASSWORD_HASH and a signing key in the environment. */
-export const authConfigured = () => !!passwordHash() && !!secret()
+export const authConfigured = () => (!!passwordHash() || !!passwordHmac()) && !!secret()
 
 export const checkPassword = (p: string): boolean => {
   if (!authConfigured()) return false
   try {
+    if (passwordHmac()) return timingSafeEqual(createHmac('sha256', SALT).update(String(p)).digest(), Buffer.from(passwordHmac(), 'hex'))
     return timingSafeEqual(scryptSync(String(p), SALT, 32), Buffer.from(passwordHash(), 'hex'))
   } catch {
     return false
@@ -108,4 +112,4 @@ export const tooManyFails = (ip: string): boolean => {
   return recent.length >= 8
 }
 export const noteFail = (ip: string) => fails.set(ip, [...(fails.get(ip) ?? []), Date.now()])
-export const ipOf = (req: VercelRequest) => String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim()
+export const ipOf = (req: VercelRequest) => String(req.headers['x-forwarded-for'] || req.headers['cf-connecting-ip'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim()

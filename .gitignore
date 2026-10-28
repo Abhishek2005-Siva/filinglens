@@ -23,3 +23,7 @@ __pycache__/
 *.pyc
 kaggle/out/
 .env*
+
+cf/backend_bundle.ts
+.wrangler/
+.dev.vars
