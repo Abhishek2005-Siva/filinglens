@@ -29,8 +29,10 @@ export async function list(opts: { prefix?: string; limit?: number; cursor?: str
   const limit = opts.limit ?? 1000
   const offset = Number(opts.cursor) || 0
   const prefix = opts.prefix ?? ''
-  const { results } = await db().prepare('SELECT path, length(body) AS size, updated FROM files WHERE substr(path, 1, length(?1)) = ?1 ORDER BY path LIMIT ?2 OFFSET ?3')
-    .bind(prefix, limit + 1, offset).all<{ path: string; size: number; updated: number }>()
+  // a range on the primary key, so only the matching rows are read (D1 counts every row it scans against the daily allowance)
+  const upper = prefix ? prefix.slice(0, -1) + String.fromCharCode(prefix.charCodeAt(prefix.length - 1) + 1) : '\uffff'
+  const { results } = await db().prepare('SELECT path, length(body) AS size, updated FROM files WHERE path >= ?1 AND path < ?2 ORDER BY path LIMIT ?3 OFFSET ?4')
+    .bind(prefix, upper, limit + 1, offset).all<{ path: string; size: number; updated: number }>()
   const more = results.length > limit
   return { blobs: results.slice(0, limit).map((r) => ({ pathname: r.path, size: r.size, uploadedAt: new Date(r.updated) })), cursor: more ? String(offset + limit) : undefined, hasMore: more }
 }
