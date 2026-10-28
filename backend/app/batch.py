@@ -232,11 +232,13 @@ class Batch:
             if self.stop or self.reason:
                 raise Stopped()
             try:
-                r = _session.get(f"{self.base}{path}", params=params, timeout=60)
+                r = _session.get(f"{self.base}{path}", params=params, headers={"Authorization": f"Bearer {self.runner.api_key}"}, timeout=60)
                 if r.status_code == 200:
                     return r.json()
                 if r.status_code == 404:
                     raise RuntimeError(r.json().get("error", "Not found"))
+                if r.status_code in (401, 403):  # the shared key was not accepted: retrying will not help
+                    raise RuntimeError(f"The website refused the SEC search ({r.status_code}): the model server's key does not match the website's.")
             except (requests.RequestException, ValueError):
                 pass
             time.sleep(2 * (attempt + 1))
