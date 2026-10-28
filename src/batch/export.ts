@@ -40,6 +40,7 @@ export async function downloadXlsx(rows: Row[], name: string, about: [string, st
     const link = String(r['SEC link'] || '')
     if (link) row.getCell('SEC link').value = { text: 'Open on SEC.gov', hyperlink: link }
   })
+  ws.getColumn('Market cap ($ millions)').numFmt = '#,##0.0'
   const head = ws.getRow(1)
   head.font = { bold: true, color: { argb: 'FFFFFFFF' } }
   head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } }

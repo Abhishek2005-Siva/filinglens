@@ -94,7 +94,10 @@ export async function fillMarketCaps(rows: Row[], onProgress: (text: string) => 
   return out
 }
 
-export const fmtCap = (v: number) => (v >= 1e12 ? `$${(v / 1e12).toFixed(2)}T` : v >= 1e9 ? `$${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${v.toLocaleString('en-US')}`)
+/** A market cap always in millions of dollars: 893000000 -> "$893.0 million", 1588000000000 -> "$1,588,000.0 million". */
+export const fmtCap = (v: number) => `$${(v / 1e6).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} million`
+/** The same value as a plain number of millions (what the sheet column and the downloads hold). */
+export const inMillions = (v: number) => Math.round(v / 1e5) / 10
 export const UNITS: Record<string, number> = { thousand: 1e3, million: 1e6, billion: 1e9, trillion: 1e12 }
 
 /** Today's market cap (Yahoo's quote page, "Market Cap (intraday)") for the companies behind these filings, one read per company. Needs only a ticker; it does not use

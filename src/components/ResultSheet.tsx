@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { COLUMNS, type Row } from '../batch/columns'
 import { downloadCsv, downloadXlsx } from '../batch/export'
-import { fmtCap, UNITS } from '../batch/marketcap'
+import { fmtCap, inMillions, UNITS } from '../batch/marketcap'
 import { useTodayCaps } from '../batch/useTodayCaps'
 
-type SortKey = 'Filed' | 'Company' | 'Events found' | 'Market cap'
+const CAP = 'Market cap ($ millions)'
+type SortKey = 'Filed' | 'Company' | 'Events found' | typeof CAP
 
 const STICKY = new Set(['Company'])
 // the columns that hold one kind of event each (CEO / CFO changes, then the other detectors)
@@ -17,8 +18,8 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
   const [minAmount, setMinAmount] = useState('')
   const [unit, setUnit] = useState('million')
   const [keepUnknown, setKeepUnknown] = useState(false)
-  const rows = useMemo<Row[]>(() => baseRows.map((r) => { const c = caps[String(r.CIK)]; return c ? { ...r, 'Market cap': c.cap ?? '' } : r }), [baseRows, caps])
-  const minValue = Number(minAmount.replace(/,/g, '')) * (UNITS[unit] ?? 1)
+  const rows = useMemo<Row[]>(() => baseRows.map((r) => { const c = caps[String(r.CIK)]; return c ? { ...r, [CAP]: c.cap ? inMillions(c.cap) : '' } : r }), [baseRows, caps])
+  const minValue = Number(minAmount.replace(/,/g, '')) * (UNITS[unit] ?? 1) // dollars; the column holds millions
   const filterOn = Number.isFinite(minValue) && minValue > 0
   const [filter, setFilter] = useState('')
   const [onlyEvents, setOnlyEvents] = useState(false)
@@ -41,7 +42,7 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
       (!onlyEvents || Number(r['Events found']) > 0) &&
       (!sel.length || (match === 'all' ? sel.every((c) => !!r[c]) : sel.some((c) => !!r[c]))) &&
       (check === 'all' || (check === 'flagged') === !!r['Needs review']) &&
-      (!filterOn || (typeof r['Market cap'] === 'number' ? r['Market cap'] >= minValue : keepUnknown)) &&
+      (!filterOn || (typeof r[CAP] === 'number' ? r[CAP] >= minValue / 1e6 : keepUnknown)) &&
       (!t || Object.values(r).some((v) => String(v).toLowerCase().includes(t))))
     return out.sort((a, b) => {
       const x = a[sort.key], y = b[sort.key]
@@ -125,7 +126,7 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
             <tr>
               <th className="rownum" aria-hidden="true">#</th>
               {shownCols.map((c) => {
-                const sortable = c === 'Filed' || c === 'Company' || c === 'Events found' || c === 'Market cap'
+                const sortable = c === 'Filed' || c === 'Company' || c === 'Events found' || c === CAP
                 return (
                   <th key={c} className={STICKY.has(c) ? 'sticky' : ''} scope="col" aria-sort={sortable && sort.key === c ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined}>
                     {sortable ? <button type="button" className="th-btn" onClick={() => sortBy(c as SortKey)}>{c}{sort.key === c ? (sort.dir === 1 ? ' ▲' : ' ▼') : ''}</button> : c}
@@ -141,7 +142,7 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
                 {shownCols.map((c) => {
                   const v = r[c] ?? ''
                   if (c === 'Company') return <td key={c} className="sticky"><button type="button" className="linklike" onClick={() => open(r)}>{v}</button></td>
-                  if (c === 'Market cap') return <td key={c} className="num">{typeof v === 'number' ? fmtCap(v) : Number(r['Events found']) > 0 && !(String(r.CIK) in caps) ? '…' : ''}</td>
+                  if (c === CAP) return <td key={c} className="num">{typeof v === 'number' ? v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : Number(r['Events found']) > 0 && !(String(r.CIK) in caps) ? '…' : ''}</td>
                   if (c === 'SEC link') return <td key={c}>{v ? <a href={String(v)} target="_blank" rel="noreferrer">Open ↗</a> : ''}</td>
                   const isEvent = c !== 'Events found' && COLUMNS.indexOf(c) >= 8 && COLUMNS.indexOf(c) <= 20 && !!v
                   return <td key={c} className={`${isEvent ? 'hit' : ''} ${c === 'Events found' || c === 'Top confidence' ? 'num' : ''} ${String(v).startsWith('Error') ? 'err' : ''}`} title={String(v)}>{v}</td>

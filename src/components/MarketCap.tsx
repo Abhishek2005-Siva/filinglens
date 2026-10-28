@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { fmtCap } from '../batch/marketcap'
 
 interface Price { price?: number; priceDate?: string; daysOld?: number; trades?: number; accession?: string; marketCap: number | null; error?: string; source?: string }
 interface Cap {
@@ -11,7 +12,7 @@ interface Cap {
   timings?: { sharesMs: number; secMs: number; priceLookupMs: number; totalMs: number }
 }
 
-const money = (v: number) => (v >= 1e12 ? `$${(v / 1e12).toFixed(2)} trillion` : v >= 1e9 ? `$${(v / 1e9).toFixed(2)} billion` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)} million` : `$${v.toLocaleString()}`)
+const money = fmtCap
 const num = (v: number) => v.toLocaleString('en-US')
 const secs = (ms?: number) => (ms == null ? '—' : `${(ms / 1000).toFixed(1)} s`)
 const skipKey = (cik: string, date: string) => `mcap-skip:${cik}:${date}`

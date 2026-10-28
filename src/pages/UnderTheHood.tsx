@@ -526,7 +526,7 @@ export default function UnderTheHood() {
             <Steps items={[
               ['From result to row', 'Each stored result becomes a row: filing details, the Items found, an event count, a summary line (“title (detail) [confidence]” per event), one column per event type, “needs review”, the highest confidence, the first proof sentence, the SEC link, the accession number and a status. Failed filings get a row with the error.'],
               ['Working with it', 'Filter box, “only filings with events”, event chips that match any or all of the chosen events, an answer-check filter (all, flagged, clean) and sorting by date, company, event count or market cap. Rows show 300 at a time.'],
-              ['Market cap column', 'While the analysis runs, the sheet reads today’s market cap by itself for every company that has a filing with events (no button; companies already read in the last 6 hours in this browser are not asked again). The “Show only filings with” box has a “Market cap above X” filter (section 13).'],
+              ['Market cap column', 'Shown and downloaded in millions of dollars (a plain number, so it sorts and filters as a number). While the analysis runs, the sheet reads today’s market cap by itself for every company that has a filing with events (no button; companies already read in the last 6 hours in this browser are not asked again). The “Show only filings with” box has a “Market cap above X” filter (section 13).'],
               ['CSV and Excel', 'Both contain exactly the rows shown. The Excel file has a frozen header, filters, a link on each SEC cell, green event cells, and an “About” sheet that explains the columns and the caveats.'],
             ]} />
           </Part>
