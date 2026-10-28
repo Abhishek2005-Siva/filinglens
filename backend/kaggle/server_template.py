@@ -203,7 +203,8 @@ def register(url: str) -> bool:
     for attempt in range(6):
         try:
             req = urllib.request.Request(f"{SITE_URL}/api/host", data=json.dumps({"action": "register", "url": url}).encode(), method="POST",
-                                         headers={"Authorization": f"Bearer {os.environ['API_KEY']}", "Content-Type": "application/json"})
+                                         # Cloudflare turns away Python's default user agent with a 403 (error 1010)
+                                         headers={"Authorization": f"Bearer {os.environ['API_KEY']}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (FilingLens model server)"})
             urllib.request.urlopen(req, timeout=20).read()
             return True
         except Exception as exc:
