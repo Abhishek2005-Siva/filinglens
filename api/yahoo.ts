@@ -3,7 +3,7 @@ import { launchBrowser } from './_browser.js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { requireAccess } from './_auth.js'
 import { storePrices } from './prices.js'
-import { one } from './_sec.js'
+import { UA, one } from './_sec.js'
 
 // Reads Yahoo Finance's public history page in a headless browser on the server and stores the closes (they are kept for a few days only, see prices.ts).
 // Pictures, fonts and video are not downloaded, which is most of the page weight. A sign-in, a CAPTCHA or an error page is reported, not worked around.
@@ -32,6 +32,65 @@ async function accept(page: Page, log?: string[]) {
 }
 
 
+
+// ---- plain page fetch (no browser): Yahoo sends the market cap and the price table inside the page itself, and answers a request that identifies itself honestly
+// (the same User-Agent with contact details that the SEC requires). This takes a fraction of a second and uses none of the browser allowance. Anything unexpected
+// (an HTTP error, a consent page, a changed layout) returns null and the browser path below takes over.
+type GetBrowser = () => Promise<Browser>
+let plainNote = '' // what the last plain fetch got (shown when the browser fallback also fails), e.g. "plain fetch: HTTP 429"
+
+/** The part of a page between two markers, read from the network stream; stops downloading as soon as it has it (the markers sit about a third into a 1 MB page). */
+async function between(url: string, start: string, end: string, until: number): Promise<{ status: number; text: string } | null> {
+  const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'text/html' }, signal: AbortSignal.timeout(Math.max(4000, Math.min(15_000, until - Date.now()))) }).catch(() => null)
+  if (!r) { plainNote = 'plain fetch: no answer'; return null }
+  plainNote = `plain fetch: HTTP ${r.status}`
+  if (!r.ok || !r.body) { await r.body?.cancel().catch(() => undefined); return { status: r.status, text: '' } }
+  const reader = r.body.getReader(), dec = new TextDecoder()
+  let buf = '', from = -1, seen = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += dec.decode(value, { stream: true })
+      seen += value.length
+      if (from < 0) {
+        from = buf.indexOf(start)
+        if (from < 0) { buf = buf.slice(-start.length); continue }
+        buf = buf.slice(from); from = 0
+      }
+      const e = buf.indexOf(end, start.length)
+      if (e >= 0) return { status: r.status, text: buf.slice(0, e + end.length) }
+      if (seen > 4_000_000) break
+    }
+  } finally { await reader.cancel().catch(() => undefined) }
+  plainNote = 'plain fetch: the expected part was not in the page'
+  return { status: r.status, text: '' }
+}
+
+const plainCap = async (ticker: string, until: number) => {
+  const g = await between(`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/`, 'data-field="marketCap"', '</fin-streamer>', until)
+  if (g?.status === 404) return { text: null, value: null, final: true as const }
+  const text = g?.text ? (/>\s*([^<\s]+)/.exec(g.text)?.[1] ?? null) : null
+  return text && parseCap(text) ? { text, value: parseCap(text), final: false as const } : null
+}
+
+const plainHistory = async (it: Item, until: number): Promise<Read | null> => {
+  const t0 = Date.now()
+  const p1 = Math.floor(Date.parse(it.from) / 1000), p2 = Math.floor(Date.parse(it.to) / 1000) + 86_400
+  const g = await between(`https://finance.yahoo.com/quote/${encodeURIComponent(it.ticker)}/history/?period1=${p1}&period2=${p2}&frequency=1d`, '<table', '</table>', until)
+  if (g?.status === 404) return { ok: false, rows: {}, timings: { plainMs: Date.now() - t0 }, log: ['plain fetch: HTTP 404'], error: 'Yahoo does not know this ticker (delisted, renamed or not listed there).' }
+  if (!g?.text) return null
+  const rows: Record<string, number> = {}
+  for (const tr of g.text.match(/<tr[\s\S]*?<\/tr>/g) ?? []) {
+    const c = (tr.match(/<td[\s\S]*?<\/td>/g) ?? []).map((td) => td.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim())
+    if (c.length < 6) continue // dividend and split lines are shorter
+    const t = Date.parse(`${c[0]} UTC`), close = Number(c[4].replace(/,/g, ''))
+    if (Number.isFinite(t) && close > 0) rows[new Date(t).toISOString().slice(0, 10)] = close
+  }
+  const n = Object.keys(rows).length
+  return { ok: n > 0, rows, timings: { plainMs: Date.now() - t0 }, log: ['plain fetch', `table rows read: ${n}`], title: 'plain', ...(n ? {} : { error: 'Yahoo showed no prices for this ticker and these dates (delisted, renamed or not listed there).' }) }
+}
+
 /** "3.12T", "812.4B", "45.6M" or "1,234,567" as a number of dollars. */
 export function parseCap(text: string | null): number | null {
   const m = /^\$?\s*([\d,]*\.?\d+)\s*([TBMK])?$/i.exec((text || '').trim())
@@ -41,8 +100,8 @@ export function parseCap(text: string | null): number | null {
 }
 
 /** Today's market cap from the company's Yahoo quote page ("Market Cap (intraday)"), one tab. `light` skips scripts (faster); the caller retries with scripts if it finds nothing. */
-async function readQuote(browser: Browser, ticker: string, until: number, light = false) {
-  const page = await browser.newPage()
+async function readQuote(gb: GetBrowser, ticker: string, until: number, light = false) {
+  const page = await (await gb()).newPage()
   try {
     await lean(page, light)
     await page.goto(`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/`, { waitUntil: 'domcontentloaded', timeout: Math.max(5000, Math.min(25_000, until - Date.now())) })
@@ -58,10 +117,10 @@ async function readQuote(browser: Browser, ticker: string, until: number, light 
 interface Read { needsScripts?: boolean; ok: boolean; rows: Record<string, number>; blocked?: string; error?: string; timings: Record<string, number>; log: string[]; title?: string }
 
 /** One company on one tab. `until` is the moment after which no more waiting is done. */
-async function readHistory(browser: Browser, it: Item, until: number, light = true): Promise<Read> {
+async function readHistory(gb: GetBrowser, it: Item, until: number, light = true): Promise<Read> {
   const tm: Record<string, number> = {}, log: string[] = []
   const t0 = Date.now()
-  const page = await browser.newPage()
+  const page = await (await gb()).newPage()
   try {
     await lean(page, light)
     tm.tabMs = Date.now() - t0
@@ -95,12 +154,23 @@ async function readHistory(browser: Browser, it: Item, until: number, light = tr
 }
 
 /** Light mode first; if that finds no table (for example a cookie dialog that needs scripts), once more with the full page. */
-async function read(browser: Browser, it: Item, until: number): Promise<Read> {
-  const a = await readHistory(browser, it, until, true)
+async function read(gb: GetBrowser, it: Item, until: number): Promise<Read> {
+  const plain = await plainHistory(it, until)
+  if (plain) return plain
+  const a = await readHistory(gb, it, until, true).catch((e: unknown): Read => ({ ok: false, rows: {}, error: `${plainNote}; browser: ${String(e).slice(0, 100)}`, timings: {}, log: [plainNote] }))
   if (a.ok || a.blocked || !a.needsScripts || until - Date.now() < 12_000) return a // a delisted company shows an empty table: reading it again with the full page would not help
-  const b = await readHistory(browser, it, until, false)
+  const b = await readHistory(gb, it, until, false)
   b.timings = { ...b.timings, lightTryMs: Object.values(a.timings).reduce((x, y) => x + y, 0), fullPageRetry: 1 }
   return b.ok || b.blocked ? b : a
+}
+
+/** Today's market cap: plain page first, then the browser without scripts, then the browser with them. */
+async function quote(gb: GetBrowser, ticker: string, until: number) {
+  const p = await plainCap(ticker, until).catch(() => null)
+  if (p) return p.final ? null : p
+  let q = await readQuote(gb, ticker, until, true).catch(() => null)
+  if (!q?.value && Date.now() < until - 12_000) q = await readQuote(gb, ticker, until, false).catch(() => null)
+  return q
 }
 
 const closeSoon = (b: Browser | null) => (b ? Promise.race([b.close().catch(() => undefined), new Promise((r) => setTimeout(r, 1500))]) : undefined)
@@ -111,22 +181,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const t0 = Date.now()
   const until = t0 + DEADLINE_MS
   let browser: Browser | null = null
+  let launching: Promise<Browser> | null = null
+  const gb: GetBrowser = () => (launching ??= launch().then((b) => (browser = b)))
   try {
     if (req.method === 'POST' && Array.isArray((req.body as { caps?: unknown } | undefined)?.caps)) {
       // today's market cap for many tickers: one browser, a few tabs side by side
       const body = req.body as { caps: string[]; tabs?: number }
       const tickers = [...new Set(body.caps.map((x) => String(x || '').toUpperCase()).filter((x) => /^[A-Z0-9.-]{1,10}$/.test(x)))].slice(0, 40)
       if (!tickers.length) return res.status(400).json({ error: 'bad_request', message: 'Send {caps:[ticker,…]}.' })
-      const tabs = Math.max(1, Math.min(5, Math.floor(body.tabs ?? 4)))
-      browser = await launch()
+      const tabs = Math.max(1, Math.min(10, Math.floor(body.tabs ?? 6)))
       const out: { ticker: string; value: number | null; ms: number }[] = []
       let next = 0
       const worker = async (n: number) => {
         await new Promise((r) => setTimeout(r, n * 300))
         while (next < tickers.length && Date.now() < until - 8000) {
           const tk = tickers[next++], ts = Date.now()
-          let q = await readQuote(browser!, tk, until, true).catch(() => null)
-          if (!q?.value && Date.now() < until - 12000) q = await readQuote(browser!, tk, until, false).catch(() => null)
+          const q = await quote(gb, tk, until)
           out.push({ ticker: tk, value: q?.value ?? null, ms: Date.now() - ts })
         }
       }
@@ -138,9 +208,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const body = (req.body ?? {}) as { items?: Item[]; tabs?: number }
       const items = (body.items ?? []).map((i) => ({ ticker: String(i.ticker || '').toUpperCase(), from: String(i.from), to: String(i.to) })).filter(valid).slice(0, 40)
       if (!items.length) return res.status(400).json({ error: 'bad_request', message: 'Send {items:[{ticker, from, to}]}.' })
-      const tabs = Math.max(1, Math.min(5, Math.floor(body.tabs ?? 3)))
-      browser = await launch()
-      const launchMs = Date.now() - t0
+      const tabs = Math.max(1, Math.min(10, Math.floor(body.tabs ?? 6)))
+      const launchMs = 0
       const out: { ticker: string; to: string; ok: boolean; days: number; ms: number; error?: string }[] = []
       let next = 0, blocked = ''
       const worker = async (n: number) => {
@@ -148,7 +217,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         while (!blocked && next < items.length && Date.now() < until - 8000) {
           const it = items[next++]
           const ts = Date.now()
-          const r = await read(browser!, it, until)
+          const r = await read(gb, it, until)
           if (r.blocked) blocked = r.blocked
           if (r.ok) await storePrices(it.ticker, r.rows)
           out.push({ ticker: it.ticker, to: it.to, ok: r.ok, days: Object.keys(r.rows).length, ms: Date.now() - ts, ...(r.blocked ? { error: 'blocked' } : r.error ? { error: r.error } : {}) })
@@ -166,18 +235,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const to = one(req.query.to) || new Date().toISOString().slice(0, 10)
     const from = one(req.query.from) || new Date(Date.parse(to) - 14 * 86_400_000).toISOString().slice(0, 10)
     if (!valid({ ticker, from, to })) return res.status(400).json({ error: 'bad_request', message: 'Give ?ticker=AAPL&from=YYYY-MM-DD&to=YYYY-MM-DD.' })
-    browser = await launch()
-    const launchMs = Date.now() - t0
+    const launchMs = 0
     if (one(req.query.caponly)) {
-      let q = await readQuote(browser, ticker, until, true).catch(() => null)
-      if (!q?.value) q = await readQuote(browser, ticker, until, false).catch(() => null)
+      const q = await quote(gb, ticker, until)
       return res.status(200).json({ ok: !!q?.value, ticker, currentMarketCap: q?.value ?? null, shown: q?.text ?? null, asOf: new Date().toISOString(), ms: Date.now() - t0, ...(q?.value ? {} : { note: 'Yahoo’s quote page showed no market cap for this ticker.' }) })
     }
-    const r = await read(browser, { ticker, from, to }, until)
+    const r = await read(gb, { ticker, from, to }, until)
     let marketCap: string | null = null
     const tm = { launchMs, ...r.timings } as Record<string, number>
     if (r.ok && one(req.query.quote) && Date.now() < until - 6000) {
-      marketCap = (await readQuote(browser, ticker, until).catch(() => null))?.text ?? null
+      marketCap = (await quote(gb, ticker, until))?.text ?? null
     }
     const ts = Date.now()
     let stored = 0

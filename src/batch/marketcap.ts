@@ -52,11 +52,11 @@ export async function fillMarketCaps(rows: Row[], onProgress: (text: string) => 
   // companies that have a ticker but no stored price: read Yahoo's history page, a group at a time
   const need = keys.filter((k) => { const r = res.get(k); return r && r.ticker && r.shares && r.market.price == null && !r.market.marketCap })
   let read = 0
-  for (let i = 0; i < need.length && !stop(); i += 24) {
-    let items = need.slice(i, i + 24).map((k) => ({ ticker: res.get(k)!.ticker!, from: day(k.split('|')[1], -10), to: k.split('|')[1], key: k }))
+  for (let i = 0; i < need.length && !stop(); i += 12) {
+    let items = need.slice(i, i + 12).map((k) => ({ ticker: res.get(k)!.ticker!, from: day(k.split('|')[1], -10), to: k.split('|')[1], key: k }))
     for (let attempt = 0; attempt < 3 && items.length && !stop(); attempt++) {
       onProgress(`Reading prices from Yahoo Finance… ${read} of ${need.length}`)
-      const d = await fetch('/api/yahoo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: items.map(({ ticker, from, to }) => ({ ticker, from, to })), tabs: 4 }) }).then((r) => r.json()).catch(() => null)
+      const d = await fetch('/api/yahoo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: items.map(({ ticker, from, to }) => ({ ticker, from, to })), tabs: 6 }) }).then((r) => r.json()).catch(() => null)
       if (!d || !d.results) break
       read += d.finished
       if (d.blocked) { onProgress('Yahoo stopped showing the pages; the rest are left empty.'); i = need.length; break }
@@ -74,9 +74,9 @@ export async function fillMarketCaps(rows: Row[], onProgress: (text: string) => 
   const again = keys.filter((k) => { const r = res.get(k); const t = tickerOfKey.get(k); return r && r.shares && r.market.price == null && t && t !== r.ticker })
   if (again.length && !stop()) {
     onProgress(`Trying the ticker from the filing… 0 of ${again.length}`)
-    for (let i = 0; i < again.length && !stop(); i += 24) {
-      const items = again.slice(i, i + 24).map((k) => ({ ticker: tickerOfKey.get(k)!, from: day(k.split('|')[1], -10), to: k.split('|')[1] }))
-      const d = await fetch('/api/yahoo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items, tabs: 4 }) }).then((r) => r.json()).catch(() => null)
+    for (let i = 0; i < again.length && !stop(); i += 12) {
+      const items = again.slice(i, i + 12).map((k) => ({ ticker: tickerOfKey.get(k)!, from: day(k.split('|')[1], -10), to: k.split('|')[1] }))
+      const d = await fetch('/api/yahoo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items, tabs: 6 }) }).then((r) => r.json()).catch(() => null)
       if (!d || d.blocked) break
     }
     n = 0
@@ -112,16 +112,18 @@ export async function fillTodayCaps(rows: Row[], onProgress: (text: string) => v
   }
   const tickers = [...new Set(tickerOfCik.values())]
   const value = new Map<string, number | null>()
-  for (let i = 0; i < tickers.length && !stop(); i += 16) {
-    let list = tickers.slice(i, i + 16)
+  // 12 companies per call (each call has its own small processor budget on the host) and three calls side by side
+  const chunks: string[][] = []
+  for (let i = 0; i < tickers.length; i += 12) chunks.push(tickers.slice(i, i + 12))
+  await pool(chunks, 3, async (chunk) => {
+    let list = chunk
     for (let attempt = 0; attempt < 3 && list.length && !stop(); attempt++) {
-      onProgress(`Reading today’s market cap from Yahoo Finance… ${value.size} of ${tickers.length}`)
-      const d = await fetch('/api/yahoo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ caps: list, tabs: 5 }) }).then((r) => r.json()).catch(() => null)
+      const d = await fetch('/api/yahoo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ caps: list, tabs: 6 }) }).then((r) => r.json()).catch(() => null)
       if (!d?.results) break
       for (const x of d.results as { ticker: string; value: number | null }[]) value.set(x.ticker, x.value)
       list = d.remaining as string[]
     }
-  }
+  }, stop, () => onProgress(`Reading today’s market cap from Yahoo Finance… ${value.size} of ${tickers.length}`))
   const out: Record<string, Cap> = {}
   for (const r of rows) {
     const t = tickerOfCik.get(String(r.CIK))
