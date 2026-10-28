@@ -97,18 +97,18 @@ export async function fillMarketCaps(rows: Row[], onProgress: (text: string) => 
 export const fmtCap = (v: number) => (v >= 1e12 ? `$${(v / 1e12).toFixed(2)}T` : v >= 1e9 ? `$${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${v.toLocaleString('en-US')}`)
 export const UNITS: Record<string, number> = { thousand: 1e3, million: 1e6, billion: 1e9, trillion: 1e12 }
 
-/** Today's market cap (Yahoo's quote page, "Market Cap (intraday)") for every filing, one read per company. Needs only a ticker; it does not use the SEC or the filing date. */
-export async function fillTodayCaps(rows: Row[], onProgress: (text: string) => void, stop: () => boolean): Promise<Record<string, Cap>> {
-  const usable = rows.filter((r) => r.CIK && r.Filed && !String(r.Status).startsWith('Error'))
+/** Today's market cap (Yahoo's quote page, "Market Cap (intraday)") for the companies behind these filings, one read per company. Needs only a ticker; it does not use
+ *  the SEC or the filing date. The answer is keyed by CIK. A company is left out when Yahoo could not be asked (the caller tries it again later); "no ticker" and
+ *  "Yahoo showed no market cap" are final answers with an empty value. */
+export async function todayCapsByCik(rows: Row[], stop: () => boolean): Promise<Record<string, Cap>> {
   const tickerOfCik = new Map<string, string>()
-  for (const r of usable) { const t = String(r.Ticker || '').trim().toUpperCase(); if (t && !tickerOfCik.has(String(r.CIK))) tickerOfCik.set(String(r.CIK), t) }
+  for (const r of rows) { const t = String(r.Ticker || '').trim().toUpperCase(); if (t && !tickerOfCik.has(String(r.CIK))) tickerOfCik.set(String(r.CIK), t) }
   // rows with no ticker: ask for the company's current one
-  const noTicker = [...new Set(usable.map((r) => String(r.CIK)).filter((c) => !tickerOfCik.has(c)))]
-  let n = 0
+  const noTicker = [...new Set(rows.map((r) => String(r.CIK)).filter((c) => !tickerOfCik.has(c)))]
+  const asked = new Set<string>()
   if (noTicker.length) {
-    onProgress(`Looking up tickers… 0 of ${noTicker.length}`)
-    const sample = new Map(usable.map((r) => [String(r.CIK), String(r.Filed).slice(0, 10)]))
-    await pool(noTicker, 6, async (c) => { const x = await light(c.replace(/^0+/, ''), sample.get(c)!); if (x?.ticker) tickerOfCik.set(c, x.ticker.toUpperCase()) }, stop, () => onProgress(`Looking up tickers… ${++n} of ${noTicker.length}`))
+    const sample = new Map(rows.map((r) => [String(r.CIK), String(r.Filed).slice(0, 10)]))
+    await pool(noTicker, 6, async (c) => { const x = await light(c.replace(/^0+/, ''), sample.get(c)!); if (x) { asked.add(c); if (x.ticker) tickerOfCik.set(c, x.ticker.toUpperCase()) } }, stop, () => {})
   }
   const tickers = [...new Set(tickerOfCik.values())]
   const value = new Map<string, number | null>()
@@ -123,12 +123,15 @@ export async function fillTodayCaps(rows: Row[], onProgress: (text: string) => v
       for (const x of d.results as { ticker: string; value: number | null }[]) value.set(x.ticker, x.value)
       list = d.remaining as string[]
     }
-  }, stop, () => onProgress(`Reading today’s market cap from Yahoo Finance… ${value.size} of ${tickers.length}`))
+  }, stop, () => {})
+  const day = new Date().toISOString().slice(0, 10)
   const out: Record<string, Cap> = {}
-  for (const r of rows) {
-    const t = tickerOfCik.get(String(r.CIK))
-    const v = t ? value.get(t) : undefined
-    out[String(r.Accession)] = v ? { cap: v, note: `${t} on Yahoo Finance, ${new Date().toISOString().slice(0, 10)}` } : { cap: null, note: !t ? 'No ticker for this company' : 'Yahoo showed no market cap' }
+  for (const c of new Set(rows.map((r) => String(r.CIK)))) {
+    const t = tickerOfCik.get(c)
+    if (!t) { if (asked.has(c)) out[c] = { cap: null, note: 'No ticker for this company' }; continue }
+    if (!value.has(t)) continue
+    const v = value.get(t)
+    out[c] = v ? { cap: v, note: `${t} on Yahoo Finance, ${day}` } : { cap: null, note: 'Yahoo showed no market cap' }
   }
   return out
 }

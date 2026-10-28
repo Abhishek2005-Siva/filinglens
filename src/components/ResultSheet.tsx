@@ -1,11 +1,10 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { COLUMNS, type Row } from '../batch/columns'
 import { downloadCsv, downloadXlsx } from '../batch/export'
-import { fillMarketCaps, fillTodayCaps, fmtCap, UNITS, type Cap } from '../batch/marketcap'
+import { fmtCap, UNITS } from '../batch/marketcap'
+import { useTodayCaps } from '../batch/useTodayCaps'
 
-const hasEvents = (r: Row) => Number(r['Events found']) > 0
-
-type SortKey = 'Filed' | 'Company' | 'Events found' | 'Market cap on filing date' | 'Market cap'
+type SortKey = 'Filed' | 'Company' | 'Events found' | 'Market cap'
 
 const STICKY = new Set(['Company'])
 // the columns that hold one kind of event each (CEO / CFO changes, then the other detectors)
@@ -13,20 +12,14 @@ const EVENT_COLS: string[] = COLUMNS.slice(8, 21)
 
 /** The on-screen spreadsheet with filter, sort and CSV / Excel download. */
 export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows: Row[]; fileBase: string; about: [string, string][] }) {
-  const [caps, setCaps] = useState<Record<string, Cap>>({})
-  const [today, setToday] = useState<Record<string, Cap>>({})
-  const [capBusy, setCapBusy] = useState('')
-  const [basis, setBasis] = useState<'Market cap on filing date' | 'Market cap'>('Market cap')
+  // today's market cap of every company with an event is read from Yahoo Finance by itself, while the analysis is still running
+  const { caps, read: capsRead, total: capsTotal } = useTodayCaps(baseRows)
   const [minAmount, setMinAmount] = useState('')
   const [unit, setUnit] = useState('million')
   const [keepUnknown, setKeepUnknown] = useState(false)
-  const stopCaps = useRef(false)
-  const rows = useMemo<Row[]>(() => baseRows.map((r) => { const c = caps[String(r.Accession)], t = today[String(r.Accession)]; return { ...r, ...(c ? { 'Market cap on filing date': c.cap ?? '', 'Market cap on filing date (note)': c.note } : {}), ...(t ? { 'Market cap': t.cap ?? '' } : {}) } }), [baseRows, caps, today])
-  const haveFiling = Object.keys(caps).length > 0
-  const haveToday = Object.keys(today).length > 0
-  const haveCaps = basis === 'Market cap' ? haveToday : haveFiling
+  const rows = useMemo<Row[]>(() => baseRows.map((r) => { const c = caps[String(r.CIK)]; return c ? { ...r, 'Market cap': c.cap ?? '' } : r }), [baseRows, caps])
   const minValue = Number(minAmount.replace(/,/g, '')) * (UNITS[unit] ?? 1)
-  const filterOn = haveCaps && Number.isFinite(minValue) && minValue > 0
+  const filterOn = Number.isFinite(minValue) && minValue > 0
   const [filter, setFilter] = useState('')
   const [onlyEvents, setOnlyEvents] = useState(false)
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'Events found', dir: -1 })
@@ -48,41 +41,14 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
       (!onlyEvents || Number(r['Events found']) > 0) &&
       (!sel.length || (match === 'all' ? sel.every((c) => !!r[c]) : sel.some((c) => !!r[c]))) &&
       (check === 'all' || (check === 'flagged') === !!r['Needs review']) &&
-      (!filterOn || (typeof r[basis] === 'number' ? r[basis] >= minValue : keepUnknown)) &&
+      (!filterOn || (typeof r['Market cap'] === 'number' ? r['Market cap'] >= minValue : keepUnknown)) &&
       (!t || Object.values(r).some((v) => String(v).toLowerCase().includes(t))))
     return out.sort((a, b) => {
       const x = a[sort.key], y = b[sort.key]
       const c = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))
       return c * sort.dir || String(a.Company).localeCompare(String(b.Company))
     })
-  }, [rows, filter, onlyEvents, sort, picked, match, check, filterOn, minValue, keepUnknown, basis])
-
-  const capsFound = rows.filter((r) => typeof r['Market cap on filing date'] === 'number').length
-  const todayFound = rows.filter((r) => typeof r['Market cap'] === 'number').length
-  const getToday = async () => {
-    stopCaps.current = false
-    setCapBusy('Starting…')
-    try {
-      setToday(await fillTodayCaps(baseRows.filter(hasEvents), setCapBusy, () => stopCaps.current))
-      setBasis('Market cap')
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'Could not get the market caps.')
-    } finally {
-      setCapBusy('')
-    }
-  }
-  const getCaps = async () => {
-    stopCaps.current = false
-    setCapBusy('Starting…')
-    try {
-      const out = await fillMarketCaps(baseRows.filter(hasEvents), setCapBusy, () => stopCaps.current)
-      setCaps((c) => ({ ...c, ...out }))
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'Could not get the market caps.')
-    } finally {
-      setCapBusy('')
-    }
-  }
+  }, [rows, filter, onlyEvents, sort, picked, match, check, filterOn, minValue, keepUnknown])
 
   const withEvents = rows.filter((r) => Number(r['Events found']) > 0).length
   const errors = rows.filter((r) => String(r.Status).startsWith('Error')).length
@@ -113,27 +79,6 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
           <button type="button" className="btn small primary" onClick={() => void exportXlsx()} disabled={exporting}>{exporting ? 'Building…' : 'Download Excel (.xlsx)'}</button>
         </div>
       </div>
-      <div className="mcap-panel" role="group" aria-label="Market cap">
-        <div className="mcap-panel-head">
-          <button type="button" className="btn primary" onClick={() => void getToday()} disabled={!!capBusy}>{capBusy ? 'Getting market cap…' : haveToday ? 'Refresh market cap today' : 'Get market cap today'}</button>
-          <button type="button" className="btn" onClick={() => void getCaps()} disabled={!!capBusy}>{haveFiling ? 'Refresh market cap on filing date' : 'Get market cap on filing date'}</button>
-          {capBusy && <button type="button" className="btn small" onClick={() => { stopCaps.current = true }}>Stop</button>}
-          {(haveFiling || haveToday) && !capBusy && <button type="button" className="btn small" onClick={() => { setCaps({}); setToday({}); setMinAmount(''); setKeepUnknown(false); setBasis('Market cap') }}>Clear market caps</button>}
-          <span className="muted small" role="status">{capBusy || (haveToday || haveFiling ? `${haveToday ? `Today: found for ${todayFound} of ${withEvents} filings with events. ` : ''}${haveFiling ? `On the filing date: found for ${capsFound} of ${withEvents}. ` : ''}The rest are empty.` : '“Today” reads Yahoo’s current market cap for each company (one read per company, quick). Only filings with events are looked up. “On the filing date” is the SEC share count × the closing price that day.')}</span>
-        </div>
-        <div className="mcap-panel-filter">
-          <b>Keep only market cap</b>
-          <select value={basis} onChange={(e) => setBasis(e.target.value as typeof basis)} aria-label="Which market cap to filter on"><option value="Market cap">today</option><option value="Market cap on filing date">on the filing date</option></select>
-          <b>above</b>
-          <input inputMode="decimal" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} placeholder="e.g. 500" disabled={!haveCaps} aria-label="Smallest market cap to keep" />
-          <select value={unit} onChange={(e) => setUnit(e.target.value)} disabled={!haveCaps} aria-label="Unit">
-            {Object.keys(UNITS).map((u) => <option key={u} value={u}>{u}</option>)}
-          </select>
-          <label className="check-line"><input type="checkbox" checked={keepUnknown} onChange={(e) => setKeepUnknown(e.target.checked)} disabled={!filterOn} /> <span>Also keep filings with no market cap found</span></label>
-          {!haveCaps && <span className="muted small">Press “Get market cap {basis === 'Market cap' ? 'today' : 'on filing date'}” first.</span>}
-          {filterOn && <span className="muted small">Keeping companies worth at least {fmtCap(minValue)}.</span>}
-        </div>
-      </div>
       <div className="event-filter" role="group" aria-label="Show only these events">
         <div className="event-filter-head">
           <b>Show only filings with:</b>
@@ -159,6 +104,18 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
             </button>
           ))}
         </div>
+        <div className="event-filter-head cap-filter">
+          <b>Market cap above</b>
+          <input inputMode="decimal" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} placeholder="e.g. 500" aria-label="Smallest market cap to keep" />
+          <select value={unit} onChange={(e) => setUnit(e.target.value)} aria-label="Unit">
+            {Object.keys(UNITS).map((u) => <option key={u} value={u}>{u}</option>)}
+          </select>
+          <label className="check-line"><input type="checkbox" checked={keepUnknown} onChange={(e) => setKeepUnknown(e.target.checked)} disabled={!filterOn} /> <span>Also keep filings with no market cap found</span></label>
+          <span className="muted small" role="status">
+            {capsTotal === 0 ? 'Market cap is read automatically for companies with events (today’s value from Yahoo Finance).' : capsRead < capsTotal ? `Reading today’s market cap from Yahoo Finance… ${capsRead} of ${capsTotal} companies` : `Today’s market cap read for ${capsTotal} companies.`}
+            {filterOn ? ` Keeping companies worth at least ${fmtCap(minValue)}.` : ''}
+          </span>
+        </div>
       </div>
       {message && <p className="explain bad" role="alert">{message}</p>}
       <p className="muted small">Showing {shown.length} row{shown.length === 1 ? '' : 's'}. Downloads include exactly the rows shown{picked.size ? ' (all columns)' : ''}. Click a company to open its full analysis; click Filed, Company or Events found to sort.</p>
@@ -168,7 +125,7 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
             <tr>
               <th className="rownum" aria-hidden="true">#</th>
               {shownCols.map((c) => {
-                const sortable = c === 'Filed' || c === 'Company' || c === 'Events found' || c === 'Market cap on filing date' || c === 'Market cap'
+                const sortable = c === 'Filed' || c === 'Company' || c === 'Events found' || c === 'Market cap'
                 return (
                   <th key={c} className={STICKY.has(c) ? 'sticky' : ''} scope="col" aria-sort={sortable && sort.key === c ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined}>
                     {sortable ? <button type="button" className="th-btn" onClick={() => sortBy(c as SortKey)}>{c}{sort.key === c ? (sort.dir === 1 ? ' ▲' : ' ▼') : ''}</button> : c}
@@ -184,8 +141,7 @@ export default function ResultSheet({ rows: baseRows, fileBase, about }: { rows:
                 {shownCols.map((c) => {
                   const v = r[c] ?? ''
                   if (c === 'Company') return <td key={c} className="sticky"><button type="button" className="linklike" onClick={() => open(r)}>{v}</button></td>
-                  if (c === 'Market cap') return <td key={c} className="num">{typeof v === 'number' ? fmtCap(v) : ''}</td>
-                  if (c === 'Market cap on filing date') return <td key={c} className="num" title={String(r['Market cap on filing date (note)'] ?? '')}>{typeof v === 'number' ? fmtCap(v) : ''}</td>
+                  if (c === 'Market cap') return <td key={c} className="num">{typeof v === 'number' ? fmtCap(v) : Number(r['Events found']) > 0 && !(String(r.CIK) in caps) ? '…' : ''}</td>
                   if (c === 'SEC link') return <td key={c}>{v ? <a href={String(v)} target="_blank" rel="noreferrer">Open ↗</a> : ''}</td>
                   const isEvent = c !== 'Events found' && COLUMNS.indexOf(c) >= 8 && COLUMNS.indexOf(c) <= 20 && !!v
                   return <td key={c} className={`${isEvent ? 'hit' : ''} ${c === 'Events found' || c === 'Top confidence' ? 'num' : ''} ${String(v).startsWith('Error') ? 'err' : ''}`} title={String(v)}>{v}</td>
