@@ -2,6 +2,15 @@ import { requireAccess } from './_auth.js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { secFetch, one, indexUrl, docUrl, padCik, type FilingRow } from './_sec.js'
 
+/** The SEC filters "forms" by root form, so "8-K" also returns every 8-K/A, and a list such as "8-K,8-K/A" is not "either one" (it returns only the amendments).
+ *  Written the way the SEC does understand: originals only = "8-K,-8-K/A", amendments only = "8-K/A", both = "8-K". Other forms are passed on as they are. */
+const secForms = (forms: string): string => {
+  const wanted = new Set(forms.split(',').map((f) => f.trim().toUpperCase()).filter(Boolean))
+  if (!wanted.size || ![...wanted].every((f) => f === '8-K' || f === '8-K/A')) return forms
+  if (wanted.has('8-K') && wanted.has('8-K/A')) return '8-K'
+  return wanted.has('8-K') ? '8-K,-8-K/A' : '8-K/A'
+}
+
 // Mirrors sec.gov's "EDGAR Full-Text Search": keywords, form type, date range, company.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!requireAccess(req, res)) return
@@ -18,7 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const phrase = item ? `${q ? q + ' ' : ''}"Item ${item}"` : q
   const params = new URLSearchParams()
   if (phrase) params.set('q', phrase)
-  params.set('forms', forms)
+  params.set('forms', secForms(forms))
   if (start && end) {
     params.set('dateRange', 'custom')
     params.set('startdt', start)

@@ -7,7 +7,7 @@ import type { Company, FilingRow, SearchResponse } from '../types'
 import { fmtDate, num } from '../utils'
 
 const FORMS = [
-  ['8-K', '8-K (current reports)'],
+  ['8-K', '8-K (current reports, not amendments)'],
   ['8-K/A', '8-K/A (amendments)'],
   ['8-K,8-K/A', '8-K and 8-K/A'],
   ['10-K', '10-K (annual reports)'],
