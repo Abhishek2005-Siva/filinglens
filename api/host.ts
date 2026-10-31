@@ -96,7 +96,9 @@ async function inspect(a: AccountDef): Promise<AccountInfo> {
     out.error = 'Kaggle rejected this account’s token (it has probably expired).'
   }
   // Kaggle limits how often it can be asked ('429 Too Many Requests'); a refused question is not the same as 'no GPU hours left' or 'files not uploaded'
-  if (!denied && [quota, ds].some((r) => r.status === 'rejected')) out.partial = true
+  // Kaggle answers 'permission denied' (403) or 'not found' for a private dataset that does not exist on the account yet: that is 'files not uploaded', not a limit
+  const noFiles = ds.status === 'rejected' && (ds.reason?.status === 403 || ds.reason?.status === 404 || /permission.*denied|not.?found/i.test(String(ds.reason?.message)))
+  if (!denied && [quota, ds].some((r) => r.status === 'rejected' && !(r === ds && noFiles))) out.partial = true
   // When Kaggle only said 'too many requests', we do not know the numbers, which is different from 'no hours left': let the person try, and Kaggle itself
   // will refuse a start that has no quota or no files.
   const busy = (r: PromiseSettledResult<unknown>) => r.status === 'rejected' && /429|too many|resource.?exhausted/i.test(String((r.reason as { message?: string; status?: unknown })?.message ?? '') + String((r.reason as { status?: unknown })?.status ?? ''))

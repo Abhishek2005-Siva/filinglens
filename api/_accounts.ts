@@ -10,6 +10,7 @@ export const ACCOUNTS: AccountDef[] = [
   { id: 'butterboy', label: 'butterboy (main)', env: 'KAGGLE_TOKEN_BUTTERBOY', main: true },
   { id: 'thanujamanjunath', label: 'thanujamanjunath', env: 'KAGGLE_TOKEN_THANUJAMANJUNATH' },
   { id: 'cs23b2005', label: 'cs23b2005', env: 'KAGGLE_TOKEN_CS23B2005' },
+  { id: 'abhishekkumarsiva', label: 'abhishekkumarsiva', env: 'KAGGLE_TOKEN_ABHISHEKKUMARSIVA' },
 ]
 
 export const KERNEL_SLUG = 'filinglens-server'
