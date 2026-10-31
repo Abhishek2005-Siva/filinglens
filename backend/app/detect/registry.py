@@ -3,6 +3,7 @@ from typing import Callable, List, Optional
 
 from .families import Auditor, Bankruptcy, Delisting, Family, Votes
 from .agree_doc import AgreementsV2
+from .counterparty_doc import Counterparties
 from .equity_doc import EquityV2
 from .families2 import CFO, Acquisition, Guidance, Restructuring
 from .item105 import CyberIncident
@@ -13,6 +14,8 @@ REGISTRY: List[Family] = [
     # Item 3.02 with the `filinglens-equity` adapter (EQUITY_DIR).
     Bankruptcy(), Delisting(), Auditor(), Votes(), CFO(), Acquisition(), AgreementsV2(), EquityV2(), Guidance(), Restructuring(),
     CyberIncident(),
+    # Counterparties: three RoBERTa-large taggers (dataset `filinglens-counterparty`, CP_DIR); stays silent when the dataset is not mounted.
+    Counterparties(),
 ]
 
 

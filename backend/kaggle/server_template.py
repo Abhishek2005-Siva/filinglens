@@ -59,6 +59,11 @@ equity_hit = glob.glob("/kaggle/input/**/equity_doc_s42/adapter_config.json", re
 if equity_hit:
     os.environ["EQUITY_DIR"] = os.path.dirname(os.path.dirname(equity_hit[0]))
 print("equity (3.02) filing reader:", os.environ.get("EQUITY_DIR", "not found (sentence readers only)"), flush=True)
+# optional: the three counterparty taggers (folders cp_ner_a/, cp_ner_b/, cp_ner_c/ of the `filinglens-counterparty` dataset)
+cp_hit = glob.glob("/kaggle/input/**/cp_ner_a/config.json", recursive=True)
+if cp_hit:
+    os.environ["CP_DIR"] = os.path.dirname(os.path.dirname(cp_hit[0]))
+print("counterparty taggers:", os.environ.get("CP_DIR", "not found (detector stays off)"), flush=True)
 # optional: the Item 1.05 (cybersecurity incident) materiality classifier. Kaggle mounts the small
 # `filinglens-item105` dataset with the adapter files at its root, same shape as filinglens-dates.
 item105_hit = glob.glob("/kaggle/input/**/filinglens-item105/adapter_config.json", recursive=True)

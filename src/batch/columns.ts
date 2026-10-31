@@ -8,7 +8,7 @@ export const COLUMNS = [
   'Events found', 'Event summary',
   'CEO appointed', 'CEO leaving', 'CFO appointed', 'CFO leaving',
   'Bankruptcy', 'Delisting / listing notice', 'Auditor change', 'Shareholder votes',
-  'Acquisition / sale', 'Material agreements', 'Unregistered equity sales', 'Earnings guidance', 'Restructuring / impairment',
+  'Acquisition / sale', 'Material agreements', 'Unregistered equity sales', 'Counterparties', 'Earnings guidance', 'Restructuring / impairment',
   'Market cap ($ millions)',
   'Needs review', 'Top confidence', 'Evidence', 'SEC link', 'Accession', 'Status',
 ] as const
@@ -61,6 +61,7 @@ export function rowFor(f: FilingRow, r: SlimResult): Row {
     'Acquisition / sale': summarize(det(r, 'acquisition')),
     'Material agreements': summarize(det(r, 'agreements')),
     'Unregistered equity sales': summarize(det(r, 'equity')),
+    'Counterparties': summarize(det(r, 'counterparties')),
     'Earnings guidance': summarize(det(r, 'guidance')),
     'Restructuring / impairment': summarize(det(r, 'restructuring')),
     'Needs review': [['CEO appointed', r.appointed], ['CEO leaving', r.resigned]].flatMap(([label, x]) => {
